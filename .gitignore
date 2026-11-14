@@ -1,0 +1,11 @@
+node_modules/
+build/
+dist/
+work/
+.env*
+!.env.example
+*.tar.gz
+.DS_Store
+server/generated-assets.ts
+public/resources/*.pdf
+outputs/
