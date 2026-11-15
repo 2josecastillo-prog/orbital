@@ -18,7 +18,7 @@ export default function AegisInfo({ config, onConfig, onOpenLab }: {
       <header className="page-heading">
         <div>
           <h1>Información sobre AEGIS</h1>
-          <p>Nave conceptual con módulos separados de servicio, hábitat y refugio.</p>
+          <p>Nave conceptual con un módulo de servicio, una cabina inspirada en Orion y un refugio autónomo acoplado.</p>
         </div>
         <button className="button primary" onClick={() => {
           onConfig(design);
@@ -27,6 +27,7 @@ export default function AegisInfo({ config, onConfig, onOpenLab }: {
           Simular AEGIS <ArrowUpRight size={16} />
         </button>
       </header>
+      <p className="hint">Modelos de vuelo e interior de IGNIS, inspirados en Orion y en su módulo de servicio europeo. El refugio y el gabinete de baterías son adaptaciones del escenario AEGIS.</p>
       <p className="hint">Las lecturas de ingeniería corresponden al final del ensayo con el montaje seleccionado.</p>
       {telemetry && (
         <AegisDesign

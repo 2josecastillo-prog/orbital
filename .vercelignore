@@ -10,3 +10,4 @@ dist/
 *.tar.gz
 server/generated-assets.ts
 public/resources/*.pdf
+IGNIS-modelos-nave.zip

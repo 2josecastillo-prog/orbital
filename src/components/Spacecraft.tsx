@@ -2,7 +2,7 @@ import { Suspense, createContext, useContext, useEffect, useMemo, useRef, type M
 
 const LabelsVisible = createContext(true);
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Lightformer, OrbitControls, Stars } from "@react-three/drei";
+import { Environment, Lightformer, OrbitControls, Stars, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { Bloom, EffectComposer, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
@@ -1023,81 +1023,125 @@ function Apollo1({ frame, cutaway, config, markers }: VehicleProps) {
   );
 }
 
-function Aegis({ frame, cutaway, config, markers }: VehicleProps) {
-  const [service, habitat, refuge] = frame.modules;
-  const ghost = cutaway;
-  const closed = frame.flags.hatchToFire;
-  const path: Vec3[] = [
-    [-5.5, 0, 0],
-    [0.2, 0, 0],
-    [6.85, 0, 0],
-  ];
+function AegisOrionModels({ cutaway }: { cutaway: boolean }) {
+  const { scene: flight } = useGLTF("/models/aegis/orion-flight.glb");
+  const { scene: cabin } = useGLTF("/models/aegis/orion-cabin.glb");
+  const service = useMemo(() => {
+    // The cabin and flight assets share the same origin. The last three
+    // root nodes of the flight asset are service hardware, base and solar wings.
+    const model = flight.clone(true);
+    for (const part of [...model.children].slice(0, 5)) model.remove(part);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0.32);
+    const materials = new Map<THREE.Material, THREE.Material>();
+    model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const clip = (original: THREE.Material) => {
+        const existing = materials.get(original);
+        if (existing) return existing;
+        const material = original.clone();
+        material.clippingPlanes = [plane];
+        material.clipShadows = true;
+        materials.set(original, material);
+        return material;
+      };
+      object.material = Array.isArray(object.material)
+        ? object.material.map(clip)
+        : clip(object.material);
+    });
+    // Keep the array visible in the exterior view, where it cannot cover the cut.
+    model.remove(model.children[2]);
+    return { model, materials };
+  }, [flight]);
+  useEffect(() => () => service.materials.forEach((material) => material.dispose()), [service]);
+
   return (
-    <group scale={0.36} position={[0, 0.2, 0]}>
-      <Hull from={-8} to={-3.2} r1={1.8} ghost={ghost} />
-      <Hull from={-2.6} to={3.2} r1={2.3} ghost={ghost} />
-      <Hull from={4.0} to={8.4} r1={1.9} color="#e7ecdf" ghost={ghost} />
-      {[-2.9, 3.6].map((x, index) => {
-        const sealed = index === 0 ? closed : frame.flags.refugeSealed;
-        return (
-        <group key={x}>
-          <mesh position={[x, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[1.18, 1.18, 0.8, 40, 1, true]} />
-            <meshStandardMaterial color="#bfc6c2" metalness={0.35} roughness={0.7} side={THREE.DoubleSide} />
-          </mesh>
-          {sealed && (
-          <mesh position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-            <circleGeometry args={[1.18, 40]} />
-            <meshStandardMaterial
-              color="#e4a477"
-              emissive="#e4a477"
-              emissiveIntensity={0.35}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          )}
-        </group>
-        );
-      })}
-      {[-8, -3.2, -2.6, 3.2, 4, 8.4].map((x, i) => (
-        <RingFrame key={x} x={x} r={[1.8, 1.8, 2.3, 2.3, 1.9, 1.9][i]} color="#69c8c6" />
-      ))}
-      {[-1, 1].map((side) => (
-        <group key={side} position={[-1, 3.4, side * 0.3]} rotation={[0, side > 0 ? 0 : Math.PI, 0]}>
-          <SolarWing length={9} width={3.2} tint="#1d3a6b" segments={5} />
-        </group>
-      ))}
-      <mesh position={[-1, 2.85, 0]}>
-        <boxGeometry args={[0.35, 1.2, 0.6]} />
-        <meshStandardMaterial color="#9aa1a5" metalness={0.7} />
+    <group rotation={[0, 0, -Math.PI / 2]}>
+      {cutaway
+        ? <><primitive object={service.model} /><primitive object={cabin} /></>
+        : <primitive object={flight} />}
+    </group>
+  );
+}
+
+function AegisHatch({ position, sealed }: { position: number; sealed: boolean }) {
+  const color = sealed ? "#df905e" : "#70c6a2";
+  return (
+    <group position={[position, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <mesh>
+        <torusGeometry args={[0.76, 0.075, 10, 40]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.25} metalness={0.48} />
       </mesh>
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[-5.6, -2.4, side * 1.4]}>
-          <boxGeometry args={[3.6, 0.05, 2.2]} />
-          <meshStandardMaterial {...surface("radiator")} roughness={1} />
+      {sealed && (
+        <mesh>
+          <circleGeometry args={[0.75, 40]} />
+          <meshStandardMaterial {...surface("metal")} color={color} roughness={1} side={THREE.DoubleSide} />
         </mesh>
-      ))}
-      <group position={[6.2, 1.9, 0]}>
-        <SolarWing length={4} width={1.6} tint="#1d3a6b" segments={3} />
-      </group>
-      <group position={[1.5, 2.3, -0.4]}>
-        <Dish radius={0.7} />
-      </group>
+      )}
+    </group>
+  );
+}
+
+function AegisRefuge({ cutaway }: { cutaway: boolean }) {
+  return (
+    <group>
+      <Hull from={3.46} to={3.94} r1={0.78} r2={1.32} color="#c7d9d3" />
+      <mesh position={[5.54, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <cylinderGeometry args={[1.32, 1.32, 3.2, 48, 1, cutaway, cutaway ? Math.PI / 2 : 0, cutaway ? Math.PI : 2 * Math.PI]} />
+        <meshStandardMaterial {...surface("metal")} color="#b4d4cb" roughness={1} side={THREE.DoubleSide} />
+      </mesh>
+      <Hull from={7.14} to={7.48} r1={1.32} r2={0.68} color="#b4d4cb" />
+      <RingFrame x={3.94} r={1.32} color="#5f9989" />
+      <RingFrame x={7.14} r={1.32} color="#5f9989" />
       {cutaway && (
         <>
-          <Interior from={-7.8} to={8.2} radius={1.75} floor={-0.87} />
-          <group position={[-6, -0.9, 1.27]}>
-            <mesh position={[0, -0.12, 0]}>
-              <boxGeometry args={[1.35, 0.08, 0.65]} />
+          <mesh position={[5.53, -0.85, 0]}>
+            <boxGeometry args={[3.18, 0.08, 1.78]} />
+            <meshStandardMaterial {...surface("deck")} roughness={1} />
+          </mesh>
+          <mesh position={[6.98, -0.14, -0.66]}>
+            <boxGeometry args={[0.26, 0.85, 0.64]} />
+            <meshStandardMaterial color="#dce9e3" roughness={0.64} />
+          </mesh>
+          <mesh position={[6.835, 0.07, -0.63]}>
+            <boxGeometry args={[0.02, 0.16, 0.38]} />
+            <meshStandardMaterial color="#31564d" emissive="#51c9a0" emissiveIntensity={0.4} />
+          </mesh>
+        </>
+      )}
+    </group>
+  );
+}
+
+const aegisBattery: Vec3 = [-2.65, -0.78, -0.46];
+const aegisFire: Vec3 = [-2.65, -0.42, -0.46];
+
+// AEGIS maps its conceptual compartments to the supplied Orion-inspired
+// geometry. The forward refuge is an AEGIS addition, not part of Orion.
+function Aegis({ frame, cutaway, config, markers }: VehicleProps) {
+  const [service, habitat, refuge] = frame.modules;
+  const closed = frame.flags.hatchToFire;
+  const path: Vec3[] = [[-2.85, 0, 0], [1.2, 0, 0], [6.92, 0, 0]];
+  const hatchPositions = [0.12, 3.68];
+  return (
+    <group scale={0.58}>
+      <AegisOrionModels cutaway={cutaway} />
+      <AegisRefuge cutaway={cutaway} />
+      {cutaway && (
+        <>
+          <AegisHatch position={hatchPositions[0]} sealed={closed} />
+          <AegisHatch position={hatchPositions[1]} sealed={frame.flags.refugeSealed} />
+          <group position={aegisBattery}>
+            <mesh position={[0, -0.1, 0]}>
+              <boxGeometry args={[1.37, 0.09, 0.64]} />
               <meshStandardMaterial {...surface("metal")} roughness={1} />
             </mesh>
-            {[-0.35, 0.35].map((x, index) => {
+            {([-0.36, 0.36] as const).map((x, index) => {
               const telemetry = frame.aegis;
               const temperature = telemetry ? (index === 0 ? telemetry.failedC : telemetry.neighborC) : 22;
               return (
                 <mesh key={x} position={[x, 0.12, 0]}>
-                  <boxGeometry args={[0.54, 0.42, 0.48]} />
-                  <meshStandardMaterial {...surface("metal")} color="#8b959a" roughness={1} emissive="#ae350c" emissiveIntensity={THREE.MathUtils.clamp((temperature - 60) / 180, 0, 0.48)} />
+                  <boxGeometry args={[0.55, 0.42, 0.48]} />
+                  <meshStandardMaterial {...surface("metal")} color="#8b959a" roughness={1} emissive="#ef4a17" emissiveIntensity={THREE.MathUtils.clamp((temperature - 55) / 160, 0, 0.65)} />
                 </mesh>
               );
             })}
@@ -1108,25 +1152,17 @@ function Aegis({ frame, cutaway, config, markers }: VehicleProps) {
               </mesh>
             )}
           </group>
-          <Smoke amount={service.smoke} center={[-5.6, 0, 0]} length={4.4} radius={1.6} gravity={config.gravity} flow={config.airflow} tint="#8b847c" />
-          <Smoke amount={habitat.smoke} center={[0.3, 0, 0]} length={5.6} radius={2.0} gravity={config.gravity} flow={config.airflow} />
-          <Smoke amount={refuge.smoke} center={[6.2, 0, 0]} length={4.2} radius={1.7} gravity={config.gravity} flow={config.airflow} />
-          <Crew frame={frame} path={path} outfit={outfits.aegis} gravity={config.gravity} floor={-0.87} markers={markers} closedHatches={[...(closed ? [-2.9] : []), ...(frame.flags.refugeSealed ? [3.6] : [])]} />
-          <Label k={2.8} position={[-5.6, 3.0, 0]} name={service.name} detail={service.visibilityText} level={service.level} />
-          <Label k={2.8} position={[0.3, 3.5, 0]} name={habitat.name} detail={habitat.visibilityText} level={habitat.level} />
-          <Label k={2.8} position={[6.2, 3.0, 0]} name={refuge.name} detail={refuge.visibilityText} level={refuge.level} />
+          <Smoke amount={service.smoke} center={[-2.5, 0, 0]} length={3.35} radius={1.13} gravity={config.gravity} flow={config.airflow} tint="#8b847c" />
+          <Smoke amount={habitat.smoke} center={[1.45, 0, 0]} length={2.4} radius={0.85} gravity={config.gravity} flow={config.airflow} />
+          <Smoke amount={refuge.smoke} center={[5.55, 0, 0]} length={2.85} radius={0.77} gravity={config.gravity} flow={config.airflow} />
+          <Crew frame={frame} path={path} outfit={outfits.aegis} gravity={config.gravity} floor={-0.85} markers={markers} closedHatches={hatchPositions.filter((_, i) => i === 0 ? closed : frame.flags.refugeSealed)} />
+          <Label k={1.25} position={[-2.5, 2.65, 0]} name={service.name} detail={service.visibilityText} level={service.level} />
+          <Label k={1.25} position={[1.1, 2.46, 0]} name={habitat.name} detail={habitat.visibilityText} level={habitat.level} />
+          <Label k={1.25} position={[5.62, 1.62, 0]} name={refuge.name} detail={refuge.visibilityText} level={refuge.level} />
+          <Flame position={aegisFire} size={0.28} intensity={frame.fireIntensity} gravity={config.gravity} flow={config.airflow * 4} soot={sootFor(config)} />
         </>
       )}
-      <Marker name="fire" position={[-6, -0.6, 1.27]} markers={markers} />
-      {/* Secondary flame from the battery vent gases. */}
-      <Flame
-        position={[-6, -0.6, 0.9]}
-        size={0.28}
-        intensity={frame.fireIntensity}
-        gravity={config.gravity}
-        flow={config.airflow * 4}
-        soot={sootFor(config) * (0.4 + config.gravity * 0.6)}
-      />
+      <Marker name="fire" position={aegisFire} markers={markers} />
     </group>
   );
 }
@@ -1137,7 +1173,7 @@ const framing: Record<ScenarioId, { width: number; min: number; target: Vec3; cl
   mir: { width: 10, min: 1.2, target: [0.4, 0.1, 0], close: 1.7, lift: 0.3 },
   apollo1: { width: 9, min: 1.2, target: [0, 0.4, 0], close: 4.2, lift: 0.45 },
   apollo13: { width: 8.5, min: 1.2, target: [0.4, 0.2, 0], close: 4.5, lift: 0.15 },
-  aegis: { width: 7.5, min: 1.2, target: [0, 0.2, 0], close: 2.4, lift: -0.1 },
+  aegis: { width: 10.5, min: 1.2, target: [0.75, 0.15, 0], close: 2.15, lift: 0.28 },
 };
 
 /** Frames the vehicle, then glides to the fire or follows the crew on request. */
@@ -1249,6 +1285,7 @@ export default function Spacecraft(props: Props) {
   const vehicle = { ...props, markers };
   return (
     <Canvas
+      onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
       shadows={!props.lightweight}
       dpr={props.lightweight ? 1 : [1, 1.75]}
       camera={{ position: [7.6, 5.0, 8.5], fov: 34, near: 0.05, far: 2000 }}
