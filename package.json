@@ -12,9 +12,11 @@
   "dependencies": {
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
+    "@react-three/postprocessing": "^3.2.2",
     "@types/papaparse": "^5.5.2",
     "lucide-react": "^0.468.0",
     "papaparse": "^5.7.1",
+    "postprocessing": "^6.39.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.0.0",

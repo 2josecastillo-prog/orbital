@@ -1,12 +1,4 @@
-import {
-  Component,
-  Suspense,
-  lazy,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   ArrowDownToLine,
@@ -22,9 +14,6 @@ import {
   LayoutDashboard,
   Menu,
   Orbit,
-  Pause,
-  Play,
-  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -32,20 +21,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import ExperimentalExplorer from "./components/ExperimentalExplorer";
-import Lab, { historicalConfig } from "./components/Lab";
+import Lab from "./components/Lab";
+import Overview from "./components/Overview";
+import Method from "./components/Method";
 import { investigations, sources, historicalCases } from "./data/research";
 import {
   defaultConfig,
+  historicalConfig,
   runSimulation,
   type SimConfig,
   type ScenarioId,
@@ -58,25 +41,21 @@ type Page =
   | "research"
   | "compare"
   | "history"
+  | "method"
   | "assistant"
   | "sources";
 type Investigation = (typeof investigations)[number];
 const nav = [
   { id: "overview", label: "Inicio", icon: LayoutDashboard, group: "Aprender" },
   { id: "history", label: "Los tres accidentes", icon: BookOpen, group: "Aprender" },
-  { id: "lab", label: "Simulador 3D", icon: Orbit, group: "Aprender" },
+  { id: "lab", label: "Simulador", icon: Orbit, group: "Aprender" },
+  { id: "method", label: "Cómo funciona", icon: SlidersHorizontal, group: "Aprender" },
   { id: "research", label: "Investigaciones", icon: FlaskConical, group: "Evidencia" },
   { id: "data", label: "Datos de ensayos", icon: Activity, group: "Evidencia" },
   { id: "compare", label: "Comparador", icon: Layers3, group: "Evidencia" },
   { id: "assistant", label: "Asistente IA", icon: Sparkles, group: "Ayuda" },
   { id: "sources", label: "Fuentes y método", icon: Database, group: "Ayuda" },
 ] as const;
-const scenarioNames: Record<ScenarioId, string> = {
-  mir: "Estación Mir",
-  apollo1: "Apollo 1",
-  apollo13: "Apollo 13",
-  aegis: "AEGIS · nave conceptual",
-};
 const cx = (...values: (string | false | undefined)[]) =>
   values.filter(Boolean).join(" ");
 function download(name: string, content: string, type = "application/json") {
@@ -86,26 +65,6 @@ function download(name: string, content: string, type = "application/json") {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-class SceneBoundary extends Component<
-  { children: ReactNode },
-  { error: boolean }
-> {
-  state = { error: false };
-  static getDerivedStateFromError() {
-    return { error: true };
-  }
-  render() {
-    return this.state.error ? (
-      <div className="scene-error">
-        <Orbit size={36} />
-        <p>La vista 3D requiere WebGL disponible en tu navegador.</p>
-        <span>Los controles y las gráficas siguen disponibles.</span>
-      </div>
-    ) : (
-      this.props.children
-    );
-  }
 }
 function SourceLink({ url, children }: { url: string; children: ReactNode }) {
   return (
@@ -135,7 +94,6 @@ function App() {
   );
   const [aiError, setAiError] = useState("");
   const [asking, setAsking] = useState(false);
-  const [showMethod, setShowMethod] = useState(false);
   const filtered = investigations.filter(
     (item) =>
       (category === "Todas" || item.category === category) &&
@@ -147,7 +105,7 @@ function App() {
     selected.includes(item.id),
   );
   useEffect(() => {
-    if (!detail && !showMethod) return;
+    if (!detail) return;
     const previousOverflow = document.body.style.overflow;
     const previousFocus = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
@@ -174,7 +132,7 @@ function App() {
       document.removeEventListener("keydown", trapFocus);
       previousFocus?.focus();
     };
-  }, [detail, showMethod]);
+  }, [detail]);
 
   useEffect(() => {
     const onHash = () => {
@@ -198,7 +156,6 @@ function App() {
       if (event.key === "Escape") {
         setDetail(null);
         setMobileOpen(false);
-        setShowMethod(false);
       }
     };
     window.addEventListener("keydown", listener);
@@ -271,7 +228,7 @@ function App() {
       )}
       <aside
         className={cx("sidebar", mobileOpen && "is-open")}
-        inert={Boolean(detail || showMethod)}
+        inert={Boolean(detail)}
       >
         <button
           className="brand"
@@ -312,7 +269,7 @@ function App() {
           </button>
         </div>
       </aside>
-      <div className="workspace" inert={Boolean(detail || showMethod)}>
+      <div className="workspace" inert={Boolean(detail)}>
         <header className="topbar">
           <div className="breadcrumb">
             <button
@@ -339,106 +296,22 @@ function App() {
         </header>
         <main>
           {page === "overview" && (
-            <>
-              <section className="hero">
-                <div className="hero-image" />
-                <div className="hero-shade" />
-                <div className="hero-content">
-                  <h1>El fuego en el espacio no se comporta como en la Tierra.</h1>
-                  <p>
-                    Sin gravedad, la llama es redonda y el humo no sube. En una
-                    cabina cerrada, una chispa puede ser mortal en segundos.
-                    Revive tres accidentes reales y descubre qué decisiones
-                    salvan a una tripulación.
-                  </p>
-                  <div className="hero-actions">
-                    <button className="button primary" onClick={() => navigate("lab")}>
-                      Abrir el simulador <ArrowRight size={17} />
-                    </button>
-                    <button className="button ghost" onClick={() => navigate("history")}>
-                      Ver los accidentes
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="facts" aria-label="Por qué importa">
-                <article>
-                  <strong>~15 s</strong>
-                  <p>Tardó el Apollo 1 en pasar de la primera chispa a la rotura del casco. La escotilla necesitaba al menos 90 s.</p>
-                  <button className="text-button" onClick={() => { changeScenario("apollo1"); navigate("lab"); }}>
-                    Simular Apollo 1 <ArrowRight size={14} />
-                  </button>
-                </article>
-                <article>
-                  <strong>1 de 2</strong>
-                  <p>Naves de escape de la Mir quedó bloqueada por el fuego en 1997. Las seis personas a bordo sobrevivieron.</p>
-                  <button className="text-button" onClick={() => { changeScenario("mir"); navigate("lab"); }}>
-                    Simular Mir <ArrowRight size={14} />
-                  </button>
-                </article>
-                <article>
-                  <strong>2 → 3</strong>
-                  <p>El módulo lunar del Apollo 13 estaba hecho para 2 personas durante 45 h. Mantuvo a 3 durante unas 90 h.</p>
-                  <button className="text-button" onClick={() => { changeScenario("apollo13"); navigate("lab"); }}>
-                    Simular Apollo 13 <ArrowRight size={14} />
-                  </button>
-                </article>
-              </section>
-
-              <section className="start-here" aria-labelledby="start-title">
-                <h2 id="start-title">Recorrido recomendado</h2>
-                <ol className="start-steps">
-                  <li>
-                    <button onClick={() => navigate("history")}>
-                      <strong>Conoce los tres accidentes</strong>
-                      <span>Qué pasó, en qué orden y qué cambió después.</span>
-                    </button>
-                  </li>
-                  <li>
-                    <button onClick={() => navigate("lab")}>
-                      <strong>Revívelos en 3D</strong>
-                      <span>Activa una protección y mira si la tripulación llega a salvo.</span>
-                    </button>
-                  </li>
-                  <li>
-                    <button onClick={() => navigate("research")}>
-                      <strong>Mira la ciencia detrás</strong>
-                      <span>14 investigaciones de la NASA sobre fuego en órbita.</span>
-                    </button>
-                  </li>
-                </ol>
-              </section>
-
-              <section className="glossary-block" aria-labelledby="glossary-title">
-                <h2 id="glossary-title">Cuatro ideas para entenderlo todo</h2>
-                <dl className="glossary">
-                  <div>
-                    <dt>Sin gravedad</dt>
-                    <dd>El aire caliente no sube. La llama es redonda, azul y más lenta, y puede ahogarse sola.</dd>
-                  </div>
-                  <div>
-                    <dt>Más oxígeno</dt>
-                    <dd>Con más oxígeno o más presión todo arde más rápido. Apollo 1 tenía 5 veces el del aire normal.</dd>
-                  </div>
-                  <div>
-                    <dt>Ventilación</dt>
-                    <dd>En órbita, solo los ventiladores mueven el aire. Apagarlos es uno de los primeros pasos ante un fuego.</dd>
-                  </div>
-                  <div>
-                    <dt>Refugio</dt>
-                    <dd>Un lugar separado, con aire y energía propios, donde esperar a que pase el peligro.</dd>
-                  </div>
-                </dl>
-              </section>
-            </>
+            <Overview
+              go={navigate}
+              openCase={(id) => {
+                changeScenario(id);
+                navigate("lab");
+              }}
+            />
           )}
+
+          {page === "method" && <Method onOpenLab={() => navigate("lab")} />}
 
           {page === "lab" && (
             <Lab
               config={config}
               onConfig={setConfig}
-              onOpenMethod={() => setShowMethod(true)}
+              onOpenMethod={() => navigate("method")}
             />
           )}
 
@@ -784,7 +657,7 @@ function App() {
                 <ShieldCheck size={30} />
                 <div>
                   <h2>AEGIS: una nave con las tres lecciones</h2>
-                  <p>Compuertas automáticas, supresión con agua nebulizada y un refugio autónomo. Pruébala con el mismo tipo de fuego.</p>
+                  <p>Una nave conceptual con compuertas automáticas, agua nebulizada y un refugio con aire propio, frente a un incendio moderno: una batería de iones de litio.</p>
                 </div>
                 <button
                   className="button primary"
@@ -934,7 +807,7 @@ function App() {
                 <section className="panel">
                   <Orbit size={22} />
                   <h3>Simulación educativa</h3>
-                  <p>Reproduce lo que se sabe de forma cualitativa: la llama sin gravedad, el efecto del oxígeno, la presión en una cabina cerrada. No predice un incendio real ni certifica una nave.</p>
+                  <p>Modelo de zonas con balance de gases y dosis ISO 13571, contrastado con los tres accidentes. Sirve para entender y comparar decisiones; no certifica una nave.</p>
                 </section>
                 <section className="panel">
                   <Sparkles size={22} />
@@ -973,9 +846,9 @@ function App() {
               <section className="panel method-detail">
                 <h2>Cómo leer la simulación</h2>
                 <ul className="plain-list">
-                  <li>Cada caso dura 3 minutos de simulación. Apollo 13 está comprimido: en la misión real pasaron horas.</li>
-                  <li>El humo se mide de 0 a 100 según cuánto deja ver, no según su toxicidad.</li>
-                  <li>«A salvo» significa que la persona llegó al refugio con la ruta despejada. No es una garantía de supervivencia.</li>
+                  <li>Apollo 1, Mir y AEGIS se calculan segundo a segundo; Apollo 13, en pasos de 30 minutos durante las 90 horas del regreso.</li>
+                  <li>La dosis de cada persona suma calor, monóxido de carbono, falta de oxígeno y CO₂ (ISO 13571): 0,3 afecta, 1 deja inconsciente, 3 se toma como letal.</li>
+                  <li>La visibilidad sale del hollín en el aire. «A salvo» significa que la persona llegó a una zona con aire respirable.</li>
                   <li>La Luna y Marte son una extrapolación: hay pocos ensayos de fuego con gravedad parcial.</li>
                 </ul>
                 <button
@@ -985,8 +858,9 @@ function App() {
                       "metodo-y-configuracion.json",
                       JSON.stringify(
                         {
-                          purpose: "Comparación educativa de escenarios; sin validación para ingeniería",
-                          units: { pressure: "kPa", oxygen: "% volumétrico", airflow: "m/s", gravity: "g", temperature: "°C", smoke: "índice de visibilidad 0–100" },
+                          purpose: "Comparación educativa de escenarios con un modelo de zonas; sin validación para ingeniería",
+                          model: "Zonas por módulo (O₂, N₂, CO₂, CO, hollín, T, P) + dosis efectiva fraccional ISO 13571 / Purser",
+                          units: { pressure: "kPa", oxygen: "% volumétrico", airflow: "m/s", gravity: "g", temperature: "°C", CO: "ppm", visibility: "m", dose: "FED adimensional" },
                           config,
                           sourceFiles: ["src/lib/simulation.ts", "src/data/research.ts"],
                         },
@@ -1071,55 +945,6 @@ function App() {
                   : "Añadir a comparación"}
               </button>
             </div>
-          </section>
-        </div>
-      )}
-      {showMethod && (
-        <div className="modal-backdrop" onClick={() => setShowMethod(false)}>
-          <section
-            className="detail-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Modelo y límites"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              autoFocus
-              className="modal-close icon-button"
-              aria-label="Cerrar método"
-              onClick={() => setShowMethod(false)}
-            >
-              <X size={22} />
-            </button>
-            <h2>Cómo funciona el modelo</h2>
-            <p>
-              La nave se divide en tres compartimentos: donde empieza el fuego,
-              el paso por el que hay que huir y el refugio. Cada segundo, el
-              modelo calcula cuánto calor y humo produce el fuego y cuánto pasa
-              al compartimento de al lado.
-            </p>
-            <p>
-              El fuego crece más rápido con más oxígeno y más presión. Sin
-              gravedad, el aire caliente no sube: si la ventilación es muy baja,
-              la llama se queda sin oxígeno y se apaga, como se ha visto en los
-              ensayos BASS y Saffire. En una cabina cerrada, el calor sube la
-              presión; así se rompió el casco del Apollo 1.
-            </p>
-            <p>
-              Una persona llega al refugio si la ruta tiene poco humo y poco
-              calor. Es una regla simplificada: no mide la toxicidad ni
-              garantiza la supervivencia. Las constantes son ilustrativas y no
-              se han ajustado con los datos de la NASA, que se muestran aparte.
-            </p>
-            <button
-              className="button primary"
-              onClick={() => {
-                setShowMethod(false);
-                navigate("sources");
-              }}
-            >
-              Consultar fuentes y método <ArrowRight size={16} />
-            </button>
           </section>
         </div>
       )}

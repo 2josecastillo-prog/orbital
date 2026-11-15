@@ -18,52 +18,63 @@ float fbm(vec3 p){ float a=0.5, s=0.0; for(int i=0;i<4;i++){ s+=a*noise(p); p*=2
 `;
 
 const flameVertex = /* glsl */ `
-uniform float uTime; uniform float uGravity; uniform float uStretch; uniform float uTurb; uniform float uSeed;
-varying vec3 vNormal; varying vec3 vView; varying float vH; varying float vN;
-${NOISE}
+uniform float uGravity; uniform float uStretch;
+varying vec2 vUv;
 void main(){
-  vec3 p = position;
-  float up = clamp(p.y*0.5+0.5, 0.0, 1.0);
-  float g = uGravity;
-  // Buoyancy: hot gas rises, the flame becomes a tall teardrop. Without gravity it stays round.
-  if (p.y > 0.0) p.y *= 1.0 + 2.6*g;
-  p.xz *= mix(1.0, 1.0 - 0.78*smoothstep(0.0, 1.0, up), g);
-  // Forced air flow along +x stretches the flame downstream.
-  p.x += uStretch * (max(p.x, 0.0) * 2.2 + 0.35);
-  p.yz *= 1.0 - 0.35*uStretch*smoothstep(0.0, 1.0, p.x*0.5+0.5);
-  // Flicker: strong in gravity, almost none in microgravity (flames there are steady).
-  float n = noise(p*2.4 + vec3(0.0, -uTime*(0.6 + 5.0*g), uSeed + uTime*0.15));
-  p += normal * (n - 0.5) * uTurb * (0.12 + 0.7*up*g + 0.35*uStretch);
-  vH = up; vN = n;
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vView = normalize(-mv.xyz);
-  vNormal = normalize(normalMatrix * normal);
-  gl_Position = projectionMatrix * mv;
+  vUv = position.xy;
+  // Camera-facing quad that stretches along buoyancy (local +y) and forced flow (local +x),
+  // both projected on screen. Seen from above, a buoyant flame correctly looks round.
+  vec4 c = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  float scale = length(modelViewMatrix[0].xyz);
+  vec3 upV = (modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz / scale;
+  vec3 flowV = (modelViewMatrix * vec4(1.0, 0.0, 0.0, 0.0)).xyz / scale;
+  vec2 rise = upV.xy * uGravity + flowV.xy * uStretch;
+  float len = length(rise);
+  vec2 dir = len > 0.001 ? rise / len : vec2(0.0, 1.0);
+  vec2 side = vec2(dir.y, -dir.x);
+  float elong = 1.0 + 0.85 * min(len, 1.6);
+  vec2 off = side * position.x + dir * (position.y * elong + (elong - 1.0));
+  c.xy += off * scale;
+  gl_Position = projectionMatrix * c;
 }`;
 
 const flameFragment = /* glsl */ `
-uniform float uIntensity; uniform float uSoot; uniform float uGravity; uniform float uCore;
-varying vec3 vNormal; varying vec3 vView; varying float vH; varying float vN;
+uniform float uTime; uniform float uGravity; uniform float uStretch; uniform float uTurb; uniform float uSeed;
+uniform float uIntensity; uniform float uSoot;
+varying vec2 vUv;
+${NOISE}
 void main(){
-  float facing = abs(dot(vNormal, vView));
-  float rim = pow(1.0 - facing, 1.5);
-  float body = pow(facing, 1.6);
-  vec3 blue = vec3(0.22, 0.42, 1.0);
-  vec3 white = vec3(1.0, 0.96, 0.84);
-  vec3 yellow = vec3(1.0, 0.72, 0.28);
-  vec3 orange = vec3(1.0, 0.36, 0.08);
-  // Soot glows yellow-orange; it rises to the tip in gravity.
-  vec3 soot = mix(white, mix(yellow, orange, smoothstep(0.55, 1.0, vH)), smoothstep(0.1, 0.6, vH));
-  float base = 1.0 - smoothstep(0.04, 0.32, vH);
-  float blueMix = clamp(max(base * (0.4 + 0.6*uGravity), 1.0 - uSoot), 0.0, 1.0);
-  vec3 col = mix(soot, blue, blueMix);
-  float a = mix(rim * 0.95, body * 0.9 + rim * 0.2, uCore) * (0.75 + 0.5*vN);
-  a *= 1.0 - smoothstep(0.7, 1.0, vH) * uGravity * 0.8;
-  a *= uIntensity;
-  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+  vec2 uv = vUv;
+  float g = uGravity;
+  float shapeG = clamp(g + uStretch * 0.5, 0.0, 1.0);
+  float y01 = uv.y * 0.5 + 0.5;
+  // Two octaves of rising noise: fast flicker with gravity (~10 Hz puffing), almost frozen without.
+  float n1 = fbm(vec3(uv.x * 2.2, uv.y * 1.6 - uTime * (0.25 + 3.2 * g), uSeed));
+  float n2 = fbm(vec3(uv.x * 4.6 + 3.0, uv.y * 3.6 - uTime * (0.4 + 5.5 * g), uSeed + 7.0));
+  float turb = (n1 * 0.65 + n2 * 0.35 - 0.5) * uTurb;
+  // Gravity: buoyant teardrop that breaks into tongues near the tip.
+  float xw = uv.x + turb * 0.6 * y01 * shapeG;
+  float width = 0.7 * pow(max(1.0 - y01, 0.0), 0.9) * sqrt(clamp((y01 + 0.02) / 0.3, 0.0, 1.0));
+  float tear = 1.0 - abs(xw) / max(width, 0.001);
+  tear = (tear - y01 * 0.25 + turb * 1.6 * y01) * smoothstep(0.0, 0.06, y01);
+  // Microgravity: steady sphere; the reaction sits in a thin shell around the fuel (limb brightening).
+  float r = length(uv) + turb * 0.07;
+  float shell = exp(-pow((r - 0.6) / 0.15, 2.0)) + 0.2 * (1.0 - smoothstep(0.0, 0.6, r));
+  float f = clamp(mix(shell * 0.95, tear * 1.6, shapeG), 0.0, 1.0);
+  // Soot glows on a blackbody ramp: dark red edge, orange, yellow, white-hot core.
+  vec3 col = mix(vec3(0.5, 0.05, 0.01), vec3(1.0, 0.36, 0.05), smoothstep(0.0, 0.35, f));
+  col = mix(col, vec3(1.0, 0.74, 0.3), smoothstep(0.35, 0.72, f));
+  col = mix(col, vec3(1.0, 0.93, 0.8), smoothstep(0.85, 1.0, f) * 0.7 * uSoot);
+  // Blue where there is no soot: the base in gravity, nearly everything in orbit.
+  float baseBlue = (1.0 - smoothstep(0.02, 0.2, y01)) * g * smoothstep(0.2, 0.6, f);
+  float blueMix = clamp(max(baseBlue, 1.0 - uSoot * (0.45 + 0.9 * max(g, uStretch * 0.6))), 0.0, 1.0);
+  col = mix(col, vec3(0.2, 0.38, 1.0), blueMix);
+  float a = smoothstep(0.0, 0.3, f) * mix(0.5, 1.0, uSoot) * mix(0.75, 1.0, g) * uIntensity;
+  // Normal blending with HDR colour: reads on pale walls and still blooms on dark ones.
+  gl_FragColor = vec4(col * (1.3 + 0.9 * f), clamp(a * 0.9, 0.0, 1.0));
 }`;
 
-function makeFlameMaterial(core: boolean) {
+function makeFlameMaterial(seed: number) {
   return new THREE.ShaderMaterial({
     vertexShader: flameVertex,
     fragmentShader: flameFragment,
@@ -72,24 +83,23 @@ function makeFlameMaterial(core: boolean) {
       uGravity: { value: 0 },
       uStretch: { value: 0 },
       uTurb: { value: 1 },
-      uSeed: { value: Math.random() * 10 },
+      uSeed: { value: seed },
       uIntensity: { value: 1 },
       uSoot: { value: 0.3 },
-      uCore: { value: core ? 1 : 0 },
     },
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     side: THREE.DoubleSide,
   });
 }
 
 /**
- * Physically motivated flame.
- * - gravity 1: teardrop, yellow from soot, blue only at the base, flickers ~10 Hz.
- * - gravity 0: sphere, blue and dim (little soot), steady.
- * - flow: stretches the flame downstream along the group's +x.
- * - soot: 0–1, rises with oxygen (pure oxygen burns bright white-yellow).
+ * Physically motivated flame, drawn as camera-facing noise layers.
+ * - gravity 1: buoyant teardrop, soot glows yellow-orange, blue only at the base, flickers.
+ * - gravity 0: steady sphere, dim and blue (little soot): what NASA sees in orbit.
+ * - flow: forced air stretches the flame downstream along the group's +x.
+ * - soot: 0–1, rises with oxygen (pure oxygen burns bright yellow-white).
  */
 export function Flame({
   position = [0, 0, 0],
@@ -112,14 +122,16 @@ export function Flame({
   turbulence?: number;
   light?: boolean;
 }) {
-  const shell = useMemo(() => makeFlameMaterial(false), []);
-  const core = useMemo(() => makeFlameMaterial(true), []);
+  const layers = useMemo(() => {
+    const seed = Math.random() * 20;
+    return [makeFlameMaterial(seed), makeFlameMaterial(seed + 11.3)];
+  }, []);
   const lightRef = useRef<THREE.PointLight>(null);
   const group = useRef<THREE.Group>(null);
   const level = Math.min(Math.max(intensity, 0), 1.5);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    for (const material of [shell, core]) {
+    for (const material of layers) {
       material.uniforms.uTime.value = t;
       material.uniforms.uGravity.value = gravity;
       material.uniforms.uStretch.value = Math.min(flow, 1.6);
@@ -130,11 +142,11 @@ export function Flame({
     if (group.current) {
       const s = size * (0.35 + Math.sqrt(level) * 0.75);
       const flicker = 1 + gravity * (Math.sin(t * 61) * 0.04 + Math.sin(t * 37) * 0.04);
-      group.current.scale.set(s * flicker, s * flicker, s * flicker);
+      group.current.scale.setScalar(s * flicker);
     }
     if (lightRef.current) {
       const warm = soot * (0.4 + gravity * 0.6);
-      lightRef.current.intensity = level * (2 + 10 * warm) * (gravity > 0.1 ? 0.85 + Math.sin(t * 43) * 0.15 : 1);
+      lightRef.current.intensity = level * (1.2 + 4.5 * warm) * (gravity > 0.1 ? 0.85 + Math.sin(t * 43) * 0.15 : 1);
     }
   });
   if (intensity < 0.02) return null;
@@ -143,11 +155,11 @@ export function Flame({
     <group position={position} rotation={rotation}>
       {light && <pointLight ref={lightRef} color={warmColor} distance={size * 22} decay={2} />}
       <group ref={group}>
-        <mesh material={shell}>
-          <sphereGeometry args={[1, 40, 32]} />
+        <mesh material={layers[0]} frustumCulled={false} renderOrder={5}>
+          <planeGeometry args={[2, 2]} />
         </mesh>
-        <mesh material={core} scale={0.62}>
-          <sphereGeometry args={[1, 32, 24]} />
+        <mesh material={layers[1]} scale={0.7} frustumCulled={false} renderOrder={6}>
+          <planeGeometry args={[2, 2]} />
         </mesh>
       </group>
     </group>
@@ -251,7 +263,7 @@ export function Smoke({
 }) {
   const ref = useRef<THREE.Points>(null);
   const data = useMemo(() => {
-    const count = 220;
+    const count = 340;
     const seeds = Array.from({ length: count }, (_, i) => ({
       x: ((i * 0.618) % 1) - 0.5,
       a: i * 2.39996,
@@ -266,15 +278,15 @@ export function Smoke({
     const fill = Math.min(amount / 100, 1);
     data.seeds.forEach((seed, i) => {
       const drift = ((seed.x + 0.5 + t * (0.01 + flow * 0.12)) % 1) - 0.5;
-      let y = Math.sin(seed.a) * seed.r * radius * 0.85;
-      const z = Math.cos(seed.a) * seed.r * radius * 0.85;
+      let y = Math.sin(seed.a) * seed.r * radius * 0.62;
+      const z = Math.cos(seed.a) * seed.r * radius * 0.62;
       if (gravity > 0.05) {
         // Ceiling layer that thickens downward as the smoke builds up.
-        const depth = radius * (0.25 + 1.5 * fill);
-        y = radius * 0.8 - seed.s * depth;
+        const depth = radius * (0.2 + 1.2 * fill);
+        y = radius * 0.6 - seed.s * depth;
       }
       data.positions.set(
-        [drift * length * 0.95 + Math.sin(t * 0.3 + i) * 0.08, y + Math.sin(t * 0.4 + i * 0.7) * 0.05, z + Math.cos(t * 0.35 + i) * 0.06],
+        [drift * length * 0.85 + Math.sin(t * 0.3 + i) * 0.08, y + Math.sin(t * 0.4 + i * 0.7) * 0.05, z + Math.cos(t * 0.35 + i) * 0.06],
         i * 3,
       );
     });
@@ -288,7 +300,7 @@ export function Smoke({
       </bufferGeometry>
       <pointsMaterial
         map={smokeTexture()}
-        size={radius * 1.4}
+        size={radius * 0.9}
         color={tint}
         transparent
         opacity={Math.min(0.06 + (amount / 100) * 0.62, 0.68)}

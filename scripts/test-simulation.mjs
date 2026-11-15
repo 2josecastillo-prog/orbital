@@ -11,92 +11,83 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
+  logLevel: "error",
 });
-const { simulate, runSimulation, whatIfs, defaultConfig, scenarioInfo } = await import(
+const { runSimulation, historicalConfig, whatIfs, scenarioInfo, FRAMES, heatTime, co2Time } = await import(
   pathToFileURL(resolve("work/simulation-test.mjs")).href
 );
-let scenarios = 0;
+
+// ---- 1. Physical sanity for every scenario and protection combination
+let runs = 0;
 for (const scenario of Object.keys(scenarioInfo)) {
-  for (const atmosphere of [
-    { oxygen: 15, pressure: 30, airflow: 0, gravity: 0 },
-    { oxygen: 100, pressure: 120, airflow: 0.5, gravity: 1 },
-    { oxygen: NaN, pressure: Infinity, airflow: NaN, gravity: -1 },
-  ]) {
-    for (const protectedMode of [false, true]) {
-      const config = {
-        ...defaultConfig,
-        ...atmosphere,
-        scenario,
-        isolation: protectedMode,
-        suppression: protectedMode,
-        backup: protectedMode,
-      };
-      const frames = simulate(config);
-      assert.equal(frames.length, 181);
-      assert.deepEqual(
-        frames,
-        simulate(config),
-        "Simulation must replay deterministically",
-      );
-      for (const [index, frame] of frames.entries()) {
-        assert.equal(frame.time, index);
-        assert.ok(
-          frame.refuge >= 0 && frame.refuge <= scenarioInfo[scenario].crew,
-        );
-        assert.ok(Number.isInteger(frame.refuge));
-        assert.ok(frame.energy >= 0 && frame.energy <= 100);
-        assert.ok(frame.oxygen >= 0 && frame.oxygen <= 100);
-        assert.ok(Number.isFinite(frame.temperature));
-        assert.ok(Number.isFinite(frame.fireIntensity));
-        for (const module of frame.modules) {
-          assert.ok(module.smoke >= 0 && module.smoke <= 100);
-          assert.ok(module.temperature >= 22 && module.temperature <= 800);
-        }
-        if (index > 0) assert.ok(frame.refuge >= frames[index - 1].refuge);
+  for (const mask of [0, 1, 2, 3, 4, 5, 6, 7]) {
+    const config = { ...historicalConfig(scenario), isolation: !!(mask & 1), suppression: !!(mask & 2), backup: !!(mask & 4) };
+    const { frames, outcome } = runSimulation(config);
+    assert.equal(frames.length, FRAMES);
+    assert.deepEqual(frames, runSimulation(config).frames, "deterministic replay");
+    for (const frame of frames) {
+      for (const m of frame.modules) {
+        assert.ok(Number.isFinite(m.temperature) && m.temperature > -200 && m.temperature < 1200, `${scenario} temperature`);
+        assert.ok(m.co >= 0 && m.co < 200000, `${scenario} CO`);
+        assert.ok(m.visibility >= 0 && m.visibility <= 30);
       }
-      scenarios++;
+      for (const c of frame.crewStatus) assert.ok(c.fed >= 0 && Number.isFinite(c.fed));
     }
+    // Dose never decreases and nobody "recovers" from a lethal dose.
+    for (let i = 0; i < scenarioInfo[scenario].crew; i++) {
+      for (let f = 1; f < frames.length; f++) {
+        assert.ok(frames[f].crewStatus[i].fed >= frames[f - 1].crewStatus[i].fed - 1e-9);
+        if (frames[f - 1].crewStatus[i].state === "lethal") assert.equal(frames[f].crewStatus[i].state, "lethal");
+      }
+    }
+    assert.equal(outcome.safe + outcome.incapacitated + outcome.lethal, scenarioInfo[scenario].crew);
+    runs++;
   }
 }
-const baseline = simulate({
-  ...defaultConfig,
-  suppression: false,
-  isolation: false,
-  backup: false,
-});
-const protectedScenario = simulate({
-  ...defaultConfig,
-  suppression: true,
-  isolation: true,
-  backup: true,
-});
-assert.ok(protectedScenario.at(-1).smoke < baseline.at(-1).smoke);
-assert.ok(protectedScenario.at(-1).temperature < baseline.at(-1).temperature);
-assert.equal(protectedScenario.at(-1).fireIntensity < 0.01, true);
-// Historical behaviour the model must reproduce qualitatively.
-const historical = (scenario, change = {}) =>
-  runSimulation({ ...defaultConfig, ...scenarioInfo[scenario].defaults, scenario, isolation: false, suppression: false, backup: false, ...change });
-const apollo1 = historical("apollo1");
-const rupture = apollo1.events.find((event) => event.kind === "rupture");
-assert.ok(rupture && rupture.time - 12 < 30, "Apollo 1 cabin must rupture within ~30 s of ignition");
-assert.equal(apollo1.outcome.safe, 0);
-assert.equal(historical("apollo1", { isolation: true }).outcome.safe, 3, "An outward-opening hatch lets the crew out");
-assert.equal(historical("apollo13").outcome.safe, 0);
-assert.equal(historical("apollo13", { backup: true }).outcome.safe, 3, "The lunar module is the lifeboat");
-const starved = historical("aegis", { airflow: 0 });
-assert.ok(starved.events.some((event) => event.kind === "starved"), "Microgravity flame without airflow starves");
-assert.ok(!historical("aegis", { airflow: 0, gravity: 1 }).events.some((event) => event.kind === "starved"), "Buoyancy keeps a 1 g flame fed");
-assert.ok(!historical("mir", { airflow: 0 }).events.some((event) => event.kind === "starved"), "Mir's oxygen candle feeds itself");
-const mirFire = historical("mir", { suppression: true });
-assert.ok(mirFire.events.some((event) => event.kind === "burnout"), "Mir's candle burns out on its own");
-assert.ok(mirFire.frames[60].fireIntensity > 0.5, "Extinguishers do not stop Mir's candle");
-assert.ok(historical("apollo13").events[0].kind === "stir", "Apollo 13 starts with the cryo stir");
-for (const scenario of Object.keys(scenarioInfo)) {
-  const run = historical(scenario);
-  assert.ok(run.frames.every((frame) => frame.narrative.length > 10 && frame.crew.length === scenarioInfo[scenario].crew));
-  assert.ok(run.outcome.title && run.outcome.factors.length > 0);
-  assert.ok(whatIfs(run.frames && { ...defaultConfig, ...scenarioInfo[scenario].defaults, scenario }).length >= 3);
+
+// ---- 2. Tenability models (ISO 13571 / Purser)
+assert.ok(heatTime(120) > 3 && heatTime(120) < 6, "~4 min to incapacitation at 120 °C");
+assert.ok(heatTime(200) < 1, "< 1 min at 200 °C");
+assert.ok(co2Time(7) > 10 && co2Time(7) < 15);
+
+// ---- 3. Historical validation
+const a1 = runSimulation(historicalConfig("apollo1"));
+const call = a1.events.find((e) => e.kind === "detection");
+const rupture = a1.events.find((e) => e.kind === "rupture");
+assert.ok(rupture, "Apollo 1 hull ruptures");
+assert.ok(rupture.time - call.time >= 8 && rupture.time - call.time <= 20, `rupture ~15 s after the call (got ${rupture.time - call.time})`);
+assert.equal(a1.outcome.lethal, 3, "Apollo 1 as in 1967: the three crew members die");
+assert.equal(runSimulation({ ...historicalConfig("apollo1"), isolation: true }).outcome.lethal, 0, "a quick-opening hatch saves them");
+
+const mir = runSimulation(historicalConfig("mir"));
+assert.equal(mir.outcome.lethal + mir.outcome.incapacitated, 0, "Mir as in 1997: everybody survives");
+assert.ok(mir.events.some((e) => e.kind === "burnout"), "the candle burns out by itself");
+assert.ok(Math.min(...mir.frames.map((f) => f.modules[1].visibility)) < 3, "dense smoke in the base block");
+
+const a13 = runSimulation(historicalConfig("apollo13"));
+assert.equal(a13.outcome.lethal, 0, "Apollo 13 as in 1970: they come home");
+const alarm = a13.events.find((e) => e.kind === "co2alarm");
+const hoursToAlarm = (alarm.time - 3600) / 3600;
+assert.ok(hoursToAlarm > 20 && hoursToAlarm < 28, `CO₂ alarm near 24.6 h (got ${hoursToAlarm})`);
+assert.equal(runSimulation({ ...historicalConfig("apollo13"), backup: false }).outcome.lethal, 3, "without the LM nobody survives");
+assert.equal(runSimulation({ ...historicalConfig("apollo13"), suppression: false }).outcome.lethal, 3, "without the CO₂ adapter nobody survives");
+
+const aegis = runSimulation(historicalConfig("aegis"));
+assert.equal(aegis.outcome.lethal + aegis.outcome.incapacitated, 0, "AEGIS design protects the crew");
+const bare = runSimulation({ ...historicalConfig("aegis"), isolation: false, suppression: false, backup: false });
+assert.ok(bare.outcome.lethal + bare.outcome.incapacitated > 0, "AEGIS without protections harms the crew");
+assert.ok(runSimulation({ ...historicalConfig("aegis"), airflow: 0, isolation: false, suppression: false, backup: false }).events.some((e) => e.kind === "starved"), "microgravity flame starves without airflow");
+
+// ---- 4. No one survives extreme heat
+for (const scenario of ["apollo1", "aegis"]) {
+  const { frames } = runSimulation({ ...historicalConfig(scenario), isolation: false, suppression: false, backup: false });
+  for (const frame of frames) {
+    frame.crewStatus.forEach((c, i) => {
+      const hot = frames.slice(0, frame.index + 1).filter((f) => f.modules[f.crewStatus[i].module].temperature >= 200).length;
+      if (hot * scenarioInfo[scenario].timeStep >= 120) assert.ok(c.fed >= 1, `${scenario}: ${c.role} cannot stay conscious after 2 min above 200 °C, even in a suit`);
+    });
+  }
 }
-console.log(
-  `Simulation checks passed for ${scenarios} scenario configurations, replay determinism, physical bounds and protection response.`,
-);
+assert.ok(whatIfs(historicalConfig("apollo1")).some((w) => w.delta > 0), "what-ifs show improvements");
+
+console.log(`Simulation checks passed: ${runs} configurations, tenability models and historical validation (Apollo 1, Mir, Apollo 13, AEGIS).`);
