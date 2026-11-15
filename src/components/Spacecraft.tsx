@@ -30,6 +30,7 @@ import { surface } from "./three/surfaces";
 export type CameraFocus = "general" | "fire" | "crew";
 type Markers = MutableRefObject<{ fire?: THREE.Object3D | null; crew?: THREE.Object3D | null }>;
 type Props = {
+  lightweight?: boolean;
   scenario: ScenarioId;
   frame: SimFrame;
   cutaway: boolean;
@@ -1248,10 +1249,10 @@ export default function Spacecraft(props: Props) {
   const vehicle = { ...props, markers };
   return (
     <Canvas
-      shadows
-      dpr={[1, 1.75]}
+      shadows={!props.lightweight}
+      dpr={props.lightweight ? 1 : [1, 1.75]}
       camera={{ position: [7.6, 5.0, 8.5], fov: 34, near: 0.05, far: 2000 }}
-      gl={{ antialias: false, alpha: false, toneMapping: THREE.NoToneMapping }}
+      gl={{ antialias: false, alpha: false, toneMapping: props.lightweight ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping }}
       style={{ width: "100%", height: "100%", touchAction: "none" }}
       aria-label={`Modelo 3D de ${scenarioInfo[props.scenario].title}. Arrastra para girar y usa la rueda para acercar.`}
     >
@@ -1269,11 +1270,11 @@ export default function Spacecraft(props: Props) {
           )}
         </Scene>
         </LabelsVisible.Provider>
-        <EffectComposer multisampling={4}>
+        {!props.lightweight && <EffectComposer multisampling={4}>
           <Bloom mipmapBlur luminanceThreshold={0.85} luminanceSmoothing={0.2} intensity={0.9} />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           <Vignette offset={0.3} darkness={0.55} />
-        </EffectComposer>
+        </EffectComposer>}
         <OrbitControls makeDefault enablePan={false} minDistance={framing[props.scenario].min} maxDistance={45} enableDamping dampingFactor={0.08} />
         <CameraRig scenario={props.scenario} focus={focus} markers={markers} />
       </Suspense>

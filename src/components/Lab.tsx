@@ -37,6 +37,7 @@ import {
   type Protection,
   type ScenarioId,
   type SimConfig,
+  type SimFrame,
 } from "../lib/simulation";
 
 export { historicalConfig };
@@ -46,21 +47,33 @@ type CameraFocus = "general" | "fire" | "crew";
 const cx = (...values: (string | false | undefined | null)[]) => values.filter(Boolean).join(" ");
 const es = (value: number, digits = 0) => value.toLocaleString("es", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 
-class SceneBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
+class SceneBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { error: boolean }> {
   state = { error: false };
   static getDerivedStateFromError() {
     return { error: true };
   }
   render() {
-    return this.state.error ? (
-      <div className="scene-fallback">
-        <Orbit size={32} />
-        <p>La vista 3D necesita WebGL. Los datos y las gráficas siguen funcionando.</p>
-      </div>
-    ) : (
-      this.props.children
-    );
+    return this.state.error ? this.props.fallback : this.props.children;
   }
+}
+
+function SceneDiagram({ frame, retry }: { frame: SimFrame; retry: () => void }) {
+  return (
+    <div className="scene-fallback scene-diagram">
+      <h2>Vista esquemática</h2>
+      <p>No se pudo iniciar la vista 3D. El esquema se actualiza al reproducir el ensayo.</p>
+      <ul aria-label="Módulos y estado en el instante actual">
+        {frame.modules.map((module, index) => (
+          <li key={module.id} className={module.level}>
+            <strong>{module.name}</strong>
+            <span>{es(module.temperature, 1)} °C · {es(module.co)} ppm de CO</span>
+            <span>{frame.crewStatus.filter((person) => person.module === index).length} tripulantes</span>
+          </li>
+        ))}
+      </ul>
+      <button className="button secondary" onClick={retry}>Reintentar vista 3D</button>
+    </div>
+  );
 }
 
 function download(name: string, content: string, type = "application/json") {
@@ -278,7 +291,13 @@ export default function Lab({
             </div>
           </div>
           <div className="scene">
-            <SceneBoundary key={config.scenario}>
+            <SceneBoundary key={`${config.scenario}:${cameraReset}`} fallback={
+              <SceneBoundary fallback={<SceneDiagram frame={frame} retry={() => setCameraReset((value) => value + 1)} />}>
+                <Suspense fallback={<div className="scene-fallback"><p>Activando el modo 3D ligero…</p></div>}>
+                  <Spacecraft scenario={config.scenario} frame={frame} cutaway={cutaway} config={config} focus={focus} seek={seek} lightweight />
+                </Suspense>
+              </SceneBoundary>
+            }>
               <Suspense
                 fallback={
                   <div className="scene-fallback">

@@ -2521,3 +2521,11 @@ td.danger {
 }
 .page-heading h1, .page-head h1, .safety-heading h1 { letter-spacing: -.035em; }
 .home-hero .button.secondary:hover { border-color: var(--flight); }
+
+.scene-diagram { padding: 24px 16px 100px; gap: 12px; }
+.scene-diagram h2 { color: var(--hud-text); }
+.scene-diagram ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; list-style: none; padding: 0; }
+.scene-diagram li { display: grid; gap: 2px; padding: 8px; border: 1px solid var(--hud-border); border-radius: 10px; background: var(--hud-surface); font-size: 12px; }
+.scene-diagram li.watch { border-color: #f0a23b; }
+.scene-diagram li.danger { border-color: #ff5a3c; }
+.scene-diagram li strong { color: var(--hud-text); }
