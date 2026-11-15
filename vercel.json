@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build:client",
+  "outputDirectory": "build/client",
+  "functions": {
+    "api/ask.ts": { "maxDuration": 60 }
+  },
+  "redirects": [
+    {
+      "source": "/resources/combustion-guide.pdf",
+      "destination": "https://www.nasa.gov/wp-content/uploads/2016/05/np-2015-10-034-jsc_combustion_in_reduced_gravity-iss-mini-book-011116-508.pdf",
+      "permanent": false
+    },
+    {
+      "source": "/resources/bass-ii-report.pdf",
+      "destination": "https://ntrs.nasa.gov/api/citations/20210011385/downloads/TM-20210011385.pdf",
+      "permanent": false
+    },
+    {
+      "source": "/resources/saffire-iv-model.pdf",
+      "destination": "https://ntrs.nasa.gov/api/citations/20220002714/downloads/Model%20Development%20of%20Large-Scale%20Spacecraft%20Fires%20during%20the%20Saffire-IV%20Experiments.pdf",
+      "permanent": false
+    }
+  ]
+}

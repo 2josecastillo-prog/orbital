@@ -1,0 +1,12 @@
+.env*
+!.env.example
+.git/
+.openai/
+node_modules/
+work/
+outputs/
+build/
+dist/
+*.tar.gz
+server/generated-assets.ts
+public/resources/*.pdf

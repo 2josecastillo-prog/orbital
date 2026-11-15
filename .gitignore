@@ -9,3 +9,4 @@ work/
 server/generated-assets.ts
 public/resources/*.pdf
 outputs/
+.vercel/
