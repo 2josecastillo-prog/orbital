@@ -1177,12 +1177,14 @@ const framing: Record<ScenarioId, { width: number; min: number; target: Vec3; cl
 };
 
 /** Frames the vehicle, then glides to the fire or follows the crew on request. */
-function CameraRig({ scenario, focus, markers }: { scenario: ScenarioId; focus: CameraFocus; markers: Markers }) {
+function CameraRig({ scenario, focus, markers, cutaway }: { scenario: ScenarioId; focus: CameraFocus; markers: Markers; cutaway: boolean }) {
   const { camera, size, controls } = useThree();
   const goal = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const orbit = controls as unknown as { target: THREE.Vector3; update: () => void } | null;
+  const exterior = scenario === "aegis" && !cutaway;
+  const width = exterior ? 17.2 : framing[scenario].width;
   useEffect(() => {
-    const { width, target } = framing[scenario];
+    const { target } = framing[scenario];
     const aspect = size.width / Math.max(size.height, 1);
     const fov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
     const distance = Math.max((width / (2 * Math.tan(fov / 2) * Math.min(aspect, 1.8))) * 1.15, 6);
@@ -1197,10 +1199,10 @@ function CameraRig({ scenario, focus, markers }: { scenario: ScenarioId; focus: 
       orbit?.update();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, size.width, size.height, scenario, controls]);
+  }, [camera, size.width, size.height, scenario, controls, width]);
   useEffect(() => {
     if (focus === "general") {
-      const { width, target } = framing[scenario];
+      const { target } = framing[scenario];
       const aspect = size.width / Math.max(size.height, 1);
       const fov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
       const distance = Math.max((width / (2 * Math.tan(fov / 2) * Math.min(aspect, 1.8))) * 1.15, 6);
@@ -1209,7 +1211,7 @@ function CameraRig({ scenario, focus, markers }: { scenario: ScenarioId; focus: 
         target: new THREE.Vector3(...target),
       };
     } else goal.current = null;
-  }, [focus, scenario, camera, size.width, size.height]);
+  }, [focus, scenario, camera, size.width, size.height, width]);
   const scratch = useMemo(() => new THREE.Vector3(), []);
   useFrame((_, delta) => {
     if (!orbit) return;
@@ -1312,8 +1314,8 @@ export default function Spacecraft(props: Props) {
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           <Vignette offset={0.3} darkness={0.55} />
         </EffectComposer>}
-        <OrbitControls makeDefault enablePan={false} minDistance={framing[props.scenario].min} maxDistance={45} enableDamping dampingFactor={0.08} />
-        <CameraRig scenario={props.scenario} focus={focus} markers={markers} />
+        <OrbitControls makeDefault enablePan={false} minDistance={framing[props.scenario].min} maxDistance={props.scenario === "aegis" ? 65 : 45} enableDamping dampingFactor={0.08} />
+        <CameraRig scenario={props.scenario} focus={focus} markers={markers} cutaway={props.cutaway} />
       </Suspense>
     </Canvas>
   );
