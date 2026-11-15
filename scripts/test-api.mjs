@@ -90,6 +90,9 @@ assert.ok(!JSON.stringify(answer).includes(env.GEMINI_API_KEY));
 assert.ok(
   captured.body.systemInstruction.parts[0].text.includes("No inventes"),
 );
+// Brief answers by default: a short word budget and a small token cap.
+assert.ok(captured.body.systemInstruction.parts[0].text.includes("Máximo 90 palabras"));
+assert.ok(captured.body.generationConfig.maxOutputTokens <= 500);
 assert.equal(
   (
     await handleApi(

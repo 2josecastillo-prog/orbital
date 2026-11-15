@@ -12,7 +12,7 @@ await build({
   platform: "node",
   format: "esm",
 });
-const { simulate, defaultConfig, scenarioInfo } = await import(
+const { simulate, runSimulation, whatIfs, defaultConfig, scenarioInfo } = await import(
   pathToFileURL(resolve("work/simulation-test.mjs")).href
 );
 let scenarios = 0;
@@ -73,6 +73,26 @@ const protectedScenario = simulate({
 assert.ok(protectedScenario.at(-1).smoke < baseline.at(-1).smoke);
 assert.ok(protectedScenario.at(-1).temperature < baseline.at(-1).temperature);
 assert.equal(protectedScenario.at(-1).fireIntensity < 0.01, true);
+// Historical behaviour the model must reproduce qualitatively.
+const historical = (scenario, change = {}) =>
+  runSimulation({ ...defaultConfig, ...scenarioInfo[scenario].defaults, scenario, isolation: false, suppression: false, backup: false, ...change });
+const apollo1 = historical("apollo1");
+const rupture = apollo1.events.find((event) => event.kind === "rupture");
+assert.ok(rupture && rupture.time - 12 < 30, "Apollo 1 cabin must rupture within ~30 s of ignition");
+assert.equal(apollo1.outcome.safe, 0);
+assert.equal(historical("apollo1", { isolation: true }).outcome.safe, 3, "An outward-opening hatch lets the crew out");
+assert.equal(historical("apollo13").outcome.safe, 0);
+assert.equal(historical("apollo13", { backup: true }).outcome.safe, 3, "The lunar module is the lifeboat");
+const starved = historical("aegis", { airflow: 0 });
+assert.ok(starved.events.some((event) => event.kind === "starved"), "Microgravity flame without airflow starves");
+assert.ok(!historical("aegis", { airflow: 0, gravity: 1 }).events.some((event) => event.kind === "starved"), "Buoyancy keeps a 1 g flame fed");
+assert.ok(!historical("mir", { airflow: 0 }).events.some((event) => event.kind === "starved"), "Mir's oxygen candle feeds itself");
+for (const scenario of Object.keys(scenarioInfo)) {
+  const run = historical(scenario);
+  assert.ok(run.frames.every((frame) => frame.narrative.length > 10 && frame.crew.length === scenarioInfo[scenario].crew));
+  assert.ok(run.outcome.title && run.outcome.factors.length > 0);
+  assert.ok(whatIfs(run.frames && { ...defaultConfig, ...scenarioInfo[scenario].defaults, scenario }).length >= 3);
+}
 console.log(
   `Simulation checks passed for ${scenarios} scenario configurations, replay determinism, physical bounds and protection response.`,
 );

@@ -21,6 +21,59 @@ import {
 import { investigations } from "../data/research";
 
 type Row = Record<string, string>;
+
+// Plain Spanish names for the most common PSI column headers.
+const glossary: [RegExp, string][] = [
+  [/initial droplet diameter/i, "Tamaño inicial de la gota"],
+  [/extinction diameter/i, "Tamaño de la gota al apagarse"],
+  [/burn time/i, "Tiempo ardiendo"],
+  [/ignition time/i, "Tiempo hasta encender"],
+  [/ignition power/i, "Potencia de encendido"],
+  [/air ?flow|inlet velocity|flow velocity/i, "Velocidad del aire"],
+  [/initial co2/i, "CO₂ inicial"],
+  [/initial co\b/i, "CO inicial"],
+  [/final o2/i, "Oxígeno al final"],
+  [/initial o2/i, "Oxígeno al inicio"],
+  [/percent o2|oxygen conc|oxygen mole|^o initial|^oxygen$/i, "Oxígeno"],
+  [/^pressure/i, "Presión"],
+  [/thickness/i, "Grosor de la muestra"],
+  [/sample width/i, "Ancho de la muestra"],
+  [/sample length/i, "Largo de la muestra"],
+  [/weight loss/i, "Pérdida de masa"],
+  [/aging time/i, "Tiempo de envejecimiento del humo"],
+  [/mixing time/i, "Tiempo de mezcla"],
+  [/fuel rate/i, "Caudal de combustible"],
+  [/helium|^he initial/i, "Helio"],
+  [/nitrogen|^n initial/i, "Nitrógeno"],
+  [/test #|test number|sample #|sample number/i, "Número de ensayo"],
+];
+export function plainColumn(header: string) {
+  const match = glossary.find(([pattern]) => pattern.test(header));
+  return match ? `${match[1]} · ${header.trim()}` : header.trim();
+}
+function correlation(points: { x: number; y: number }[]) {
+  if (points.length < 4) return null;
+  const n = points.length;
+  const mx = points.reduce((a, p) => a + p.x, 0) / n;
+  const my = points.reduce((a, p) => a + p.y, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const p of points) {
+    sxy += (p.x - mx) * (p.y - my);
+    sxx += (p.x - mx) ** 2;
+    syy += (p.y - my) ** 2;
+  }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+}
+function trendText(r: number | null, x: string, y: string) {
+  if (r === null) return "Hay muy pocos puntos o valores repetidos para ver una tendencia.";
+  const a = x.split(" · ")[0].toLowerCase();
+  const b = y.split(" · ")[0].toLowerCase();
+  if (r > 0.6) return `Tendencia clara: cuando sube ${a}, también sube ${b}.`;
+  if (r > 0.3) return `Tendencia leve: con más ${a} suele haber algo más de ${b}.`;
+  if (r < -0.6) return `Tendencia clara: cuando sube ${a}, baja ${b}.`;
+  if (r < -0.3) return `Tendencia leve: con más ${a} suele haber algo menos de ${b}.`;
+  return `No se ve una relación clara entre ${a} y ${b} en estos ensayos.`;
+}
 const numeric = (value: unknown) =>
   typeof value === "string" &&
   value.trim() !== "" &&
@@ -130,6 +183,15 @@ export default function ExperimentalExplorer() {
 
   return (
     <>
+      <section className="data-intro">
+        <h2>Cómo usar esta página</h2>
+        <ol>
+          <li>Elige una investigación. Cada fila de su tabla es un ensayo real hecho en el espacio.</li>
+          <li>Elige qué comparar en cada eje. El gráfico pone un punto por ensayo.</li>
+          <li>Lee la frase bajo el gráfico: te dice si hay tendencia y hacia dónde va.</li>
+        </ol>
+        {!imported && <p><strong>{study.name}:</strong> {study.summary}</p>}
+      </section>
       <section className="panel dataset-header">
         <div>
           <span className="eyebrow">TABLAS ORIGINALES · NASA PSI</span>
@@ -229,7 +291,7 @@ export default function ExperimentalExplorer() {
                       >
                         {numericHeaders.map((column) => (
                           <option key={column} value={column}>
-                            {column}
+                            {plainColumn(column)}
                           </option>
                         ))}
                       </select>
@@ -243,7 +305,7 @@ export default function ExperimentalExplorer() {
                       >
                         {numericHeaders.map((column) => (
                           <option key={column} value={column}>
-                            {column}
+                            {plainColumn(column)}
                           </option>
                         ))}
                       </select>
@@ -262,7 +324,7 @@ export default function ExperimentalExplorer() {
                           domain={["auto", "auto"]}
                           tick={{ fill: "#9aaeb9", fontSize: 11 }}
                           label={{
-                            value: x,
+                            value: plainColumn(x),
                             position: "bottom",
                             fill: "#b0c5ce",
                             fontSize: 10,
@@ -283,10 +345,10 @@ export default function ExperimentalExplorer() {
                               <div className="data-tooltip">
                                 <strong>{payload[0].payload.test}</strong>
                                 <span>
-                                  {x} · {payload[0].payload.x}
+                                  {plainColumn(x).split(" · ")[0]}: {payload[0].payload.x}
                                 </span>
                                 <span>
-                                  {y} · {payload[0].payload.y}
+                                  {plainColumn(y).split(" · ")[0]}: {payload[0].payload.y}
                                 </span>
                                 <span>{payload[0].payload.material}</span>
                               </div>
@@ -303,13 +365,17 @@ export default function ExperimentalExplorer() {
                       </ScatterChart>
                     </ResponsiveContainer>
                   </div>
+                  <p className="plot-reading">
+                    <strong>Cómo leerlo:</strong> cada punto es un ensayo.{" "}
+                    {trendText(correlation(points), plainColumn(x), plainColumn(y))}{" "}
+                    <span>Una tendencia no demuestra causa: puede influir otra condición del ensayo.</span>
+                  </p>
                   <div className="plot-footnote">
                     <span>
-                      {points.length} pares numéricos de {filtered.length}{" "}
-                      registros filtrados · los campos vacíos se omiten del
-                      gráfico.
+                      {points.length} ensayos con ambos valores de {filtered.length}{" "}
+                      filtrados. Las casillas vacías no se dibujan.
                     </span>
-                    <span>Eje Y · {y}</span>
+                    <span>Eje vertical: {plainColumn(y)}</span>
                   </div>
                 </>
               ) : (

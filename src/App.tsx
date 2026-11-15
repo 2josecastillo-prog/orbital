@@ -42,16 +42,15 @@ import {
   YAxis,
 } from "recharts";
 import ExperimentalExplorer from "./components/ExperimentalExplorer";
+import Lab, { historicalConfig } from "./components/Lab";
 import { investigations, sources, historicalCases } from "./data/research";
 import {
   defaultConfig,
-  simulate,
-  scenarioInfo,
+  runSimulation,
   type SimConfig,
   type ScenarioId,
 } from "./lib/simulation";
 
-const Spacecraft = lazy(() => import("./components/Spacecraft"));
 type Page =
   | "overview"
   | "lab"
@@ -127,11 +126,6 @@ function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<Investigation | null>(null);
   const [config, setConfig] = useState<SimConfig>(defaultConfig);
-  const [time, setTime] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [speed, setSpeed] = useState(4);
-  const [cutaway, setCutaway] = useState(true);
-  const [cameraReset, setCameraReset] = useState(0);
   const [aiConfigured, setAiConfigured] = useState(false);
   const [aiChecked, setAiChecked] = useState(false);
   const [question, setQuestion] = useState("");
@@ -142,9 +136,6 @@ function App() {
   const [aiError, setAiError] = useState("");
   const [asking, setAsking] = useState(false);
   const [showMethod, setShowMethod] = useState(false);
-  const [compareProtection, setCompareProtection] = useState(false);
-  const frames = useMemo(() => simulate(config), [config]);
-  const frame = frames[Math.min(time, frames.length - 1)];
   const filtered = investigations.filter(
     (item) =>
       (category === "Todas" || item.category === category) &&
@@ -155,15 +146,6 @@ function App() {
   const comparisons = investigations.filter((item) =>
     selected.includes(item.id),
   );
-  const protectedFrames = useMemo(
-    () =>
-      simulate({ ...config, isolation: true, suppression: true, backup: true }),
-    [config],
-  );
-  const smokeChart = frames
-    .filter((f) => f.time <= time)
-    .map((f) => ({ ...f, protectedSmoke: protectedFrames[f.time].smoke }));
-
   useEffect(() => {
     if (!detail && !showMethod) return;
     const previousOverflow = document.body.style.overflow;
@@ -212,21 +194,6 @@ function App() {
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    if (!running || page !== "lab") return;
-    const interval = setInterval(
-      () =>
-        setTime((t) => {
-          if (t >= 180) {
-            setRunning(false);
-            return 180;
-          }
-          return t + 1;
-        }),
-      1000 / speed,
-    );
-    return () => clearInterval(interval);
-  }, [running, page, speed]);
-  useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setDetail(null);
@@ -238,7 +205,6 @@ function App() {
     return () => window.removeEventListener("keydown", listener);
   }, []);
   function navigate(next: Page) {
-    setRunning(false);
     setPage(next);
     window.location.hash = next;
     setMobileOpen(false);
@@ -253,22 +219,10 @@ function App() {
           : current,
     );
   }
-  function updateConfig(change: Partial<SimConfig>) {
-    setConfig((current) => ({ ...current, ...change }));
-    setTime(0);
-    setRunning(false);
-  }
   function changeScenario(scenario: ScenarioId) {
-    updateConfig({
-      ...defaultConfig,
-      scenario,
-      ...scenarioInfo[scenario].defaults,
-      isolation: scenario === "aegis",
-      suppression: scenario === "mir" || scenario === "aegis",
-      backup: scenario === "aegis" || scenario === "apollo13",
-    });
+    setConfig(historicalConfig(scenario));
   }
-  async function ask(text = question) {
+  async function ask(text = question, detail = false) {
     if (!text.trim() || asking) return;
     setQuestion(text);
     setAsking(true);
@@ -281,9 +235,11 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: text,
+          detail,
           context: {
             scenario: config.scenario,
             conditions: config,
+            simulationResult: runSimulation(config).outcome.title,
             selectedInvestigations: selected,
           },
         }),
@@ -454,6 +410,52 @@ function App() {
                   <span>AEGIS · CONCEPTO</span>
                 </div>
               </section>
+              <section className="start-here" aria-labelledby="start-title">
+                <h2 id="start-title">Empieza aquí</h2>
+                <p>
+                  No hace falta saber de química ni de datos. En diez minutos
+                  puedes entender por qué el fuego en una nave es tan
+                  peligroso y qué decisiones salvan vidas.
+                </p>
+                <ol className="start-steps">
+                  <li>
+                    <button onClick={() => navigate("history")}>
+                      <strong>Conoce tres accidentes reales</strong>
+                      <span>Apollo 1, Apollo 13 y la estación Mir en un minuto cada uno.</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button onClick={() => navigate("lab")}>
+                      <strong>Revívelos en 3D y cambia el final</strong>
+                      <span>Activa una protección y mira cuántas personas llegan a salvo.</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button onClick={() => navigate("data")}>
+                      <strong>Mira los ensayos de la NASA</strong>
+                      <span>Cada punto del gráfico es un experimento hecho en órbita.</span>
+                    </button>
+                  </li>
+                </ol>
+                <dl className="glossary">
+                  <div>
+                    <dt>Microgravedad</dt>
+                    <dd>En órbita todo flota. El aire caliente no sube, así que la llama es redonda, más lenta y a veces se ahoga sola.</dd>
+                  </div>
+                  <div>
+                    <dt>Oxígeno disponible</dt>
+                    <dd>Cuanto más oxígeno hay y más presión tiene, más rápido arde todo. Apollo 1 tenía 5 veces más que el aire normal.</dd>
+                  </div>
+                  <div>
+                    <dt>Ventilación</dt>
+                    <dd>En órbita, los ventiladores son lo único que mueve el aire. Apagarlos es uno de los primeros pasos ante un fuego.</dd>
+                  </div>
+                  <div>
+                    <dt>Refugio</dt>
+                    <dd>Un lugar separado, con aire y energía propios, al que la tripulación puede ir mientras pasa el peligro.</dd>
+                  </div>
+                </dl>
+              </section>
               <div className="metric-grid">
                 <div className="metric-card">
                   <FlaskConical />
@@ -601,413 +603,11 @@ function App() {
           )}
 
           {page === "lab" && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <span className="eyebrow">SIMULACIÓN INTERACTIVA</span>
-                  <h1>Explora cada decisión.</h1>
-                  <p>
-                    Modifica las condiciones y observa la evolución del
-                    escenario.
-                  </p>
-                </div>
-                <button
-                  className="button secondary"
-                  onClick={() => setShowMethod(true)}
-                >
-                  <CircleHelp size={16} /> Modelo y límites
-                </button>
-              </div>
-              <div className="scenario-tabs">
-                {(Object.keys(scenarioNames) as ScenarioId[]).map((id) => (
-                  <button
-                    className={config.scenario === id ? "selected" : ""}
-                    key={id}
-                    onClick={() => changeScenario(id)}
-                  >
-                    {scenarioNames[id]}
-                    {id === "aegis" && <ShieldCheck size={15} />}
-                  </button>
-                ))}
-              </div>
-              <div className="simulation-layout">
-                <section className="viewport-panel">
-                  <div className="viewport-toolbar">
-                    <div>
-                      <i className={running ? "live-dot" : "paused-dot"} />
-                      <strong>{scenarioNames[config.scenario]}</strong>
-                      <span>
-                        {config.gravity === 0
-                          ? "Microgravedad"
-                          : `${config.gravity} g`}
-                      </span>
-                    </div>
-                    <div className="viewport-actions">
-                      <button
-                        className="icon-button"
-                        aria-label="Restablecer vista 3D"
-                        title="Restablecer vista 3D"
-                        onClick={() => setCameraReset((value) => value + 1)}
-                      >
-                        <RotateCcw size={15} />
-                      </button>
-                      <button
-                        className={cx("small-button", cutaway && "selected")}
-                        onClick={() => setCutaway((value) => !value)}
-                      >
-                        <Layers3 size={14} /> Corte interior
-                      </button>
-                    </div>
-                  </div>
-                  <div className="scene">
-                    <SceneBoundary key={config.scenario}>
-                      <Suspense
-                        fallback={
-                          <div className="scene-error">
-                            <Orbit className="spin" />
-                            <p>Preparando la nave…</p>
-                          </div>
-                        }
-                      >
-                        <Spacecraft
-                          key={cameraReset}
-                          scenario={config.scenario}
-                          frame={frame}
-                          cutaway={cutaway}
-                          gravity={config.gravity}
-                        />
-                      </Suspense>
-                    </SceneBoundary>
-                    <div className="scene-caption">
-                      Reconstrucción esquemática · arrastra para girar · rueda
-                      para acercar
-                    </div>
-                    <div className="scene-label">
-                      <span>TIEMPO DEL MODELO</span>
-                      <strong>T + {String(time).padStart(3, "0")} s</strong>
-                    </div>
-                  </div>
-                  <div className="playback">
-                    <button
-                      className="play-button"
-                      aria-label={
-                        running ? "Pausar simulación" : "Reproducir simulación"
-                      }
-                      onClick={() => {
-                        if (time === 180) setTime(0);
-                        setRunning((v) => !v);
-                      }}
-                    >
-                      {running ? <Pause size={18} /> : <Play size={18} />}
-                    </button>
-                    <button
-                      className="icon-button"
-                      aria-label="Reiniciar simulación"
-                      onClick={() => {
-                        setTime(0);
-                        setRunning(false);
-                      }}
-                    >
-                      <RotateCcw size={17} />
-                    </button>
-                    <input
-                      aria-label="Tiempo del escenario"
-                      type="range"
-                      min={0}
-                      max={180}
-                      value={time}
-                      onChange={(e) => {
-                        setRunning(false);
-                        setTime(Number(e.target.value));
-                      }}
-                    />
-                    <span>{time} / 180 s</span>
-                    <select
-                      aria-label="Velocidad de reproducción"
-                      value={speed}
-                      onChange={(event) => setSpeed(Number(event.target.value))}
-                    >
-                      <option value={1}>1×</option>
-                      <option value={4}>4×</option>
-                      <option value={8}>8×</option>
-                    </select>
-                  </div>
-                </section>
-                <aside className="control-panel">
-                  <div className="section-title">
-                    <h3>Condiciones del escenario</h3>
-                    <SlidersHorizontal size={17} />
-                  </div>
-                  <Range
-                    label="Oxígeno"
-                    value={config.oxygen}
-                    unit="% vol."
-                    min={15}
-                    max={100}
-                    step={1}
-                    onChange={(oxygen) => updateConfig({ oxygen })}
-                  />
-                  <Range
-                    label="Presión"
-                    value={config.pressure}
-                    unit="kPa"
-                    min={30}
-                    max={120}
-                    step={0.1}
-                    onChange={(pressure) => updateConfig({ pressure })}
-                  />
-                  <p className="partial-pressure">
-                    Presión parcial de O₂{" "}
-                    <strong>
-                      {((config.oxygen * config.pressure) / 100).toFixed(1)} kPa
-                    </strong>
-                  </p>
-                  <Range
-                    label="Flujo de aire"
-                    value={config.airflow}
-                    unit="m/s"
-                    min={0}
-                    max={0.5}
-                    step={0.01}
-                    onChange={(airflow) => updateConfig({ airflow })}
-                  />
-                  <label className="select-label">
-                    Entorno gravitacional
-                    <select
-                      value={config.gravity}
-                      onChange={(e) =>
-                        updateConfig({ gravity: Number(e.target.value) })
-                      }
-                    >
-                      <option value={0}>Microgravedad · ~0 g</option>
-                      <option value={0.16}>Luna · 0,16 g</option>
-                      <option value={0.38}>Marte · 0,38 g</option>
-                      <option value={1}>Tierra · 1 g</option>
-                    </select>
-                  </label>
-                  {config.gravity > 0 && config.gravity < 1 && (
-                    <p className="inline-note">
-                      Gravedad parcial exploratoria, pendiente de validación
-                      experimental.
-                    </p>
-                  )}
-                  <div className="control-divider" />
-                  <h4>Barreras de protección</h4>
-                  <Toggle
-                    label="Aislamiento de compartimentos"
-                    checked={config.isolation}
-                    onChange={(isolation) => updateConfig({ isolation })}
-                  />
-                  <Toggle
-                    label="Supresión del incendio"
-                    checked={config.suppression}
-                    onChange={(suppression) => updateConfig({ suppression })}
-                  />
-                  <Toggle
-                    label="Recursos de respaldo"
-                    checked={config.backup}
-                    onChange={(backup) => updateConfig({ backup })}
-                  />
-                  <button
-                    className="button secondary full"
-                    onClick={() =>
-                      download(
-                        `escenario-${config.scenario}.json`,
-                        JSON.stringify(
-                          {
-                            config,
-                            model:
-                              "Modelo educativo por compartimentos, sin validación predictiva",
-                            frames,
-                          },
-                          null,
-                          2,
-                        ),
-                      )
-                    }
-                  >
-                    <ArrowDownToLine size={15} /> Exportar escenario
-                  </button>
-                </aside>
-              </div>
-              <div className="model-note">
-                <CircleHelp size={16} />
-                <p>
-                  <strong>Modelo educativo.</strong> Los valores son calculados
-                  con supuestos simplificados. La geometría es esquemática. El
-                  resultado permite comparar hipótesis y requiere validación
-                  para decisiones de ingeniería.
-                </p>
-              </div>
-              <div className="telemetry-grid">
-                <Telemetry
-                  label="Temperatura del foco"
-                  value={frame.temperature.toFixed(0)}
-                  unit="°C"
-                  color="orange"
-                />
-                <Telemetry
-                  label="Índice de humo"
-                  value={frame.smoke.toFixed(1)}
-                  unit="/ 100"
-                  color="cyan"
-                />
-                <Telemetry
-                  label="Energía disponible"
-                  value={frame.energy.toFixed(0)}
-                  unit="%"
-                  color="lime"
-                />
-                <Telemetry
-                  label="Personas en refugio"
-                  value={String(frame.refuge)}
-                  unit={`/ ${config.scenario === "mir" || config.scenario === "aegis" ? 6 : 3}`}
-                  color="violet"
-                />
-              </div>
-              <div className="comparison-control">
-                <Toggle
-                  label="Comparar humo con todas las barreras activas"
-                  checked={compareProtection}
-                  onChange={setCompareProtection}
-                />
-                {compareProtection && (
-                  <span>
-                    Curva verde discontinua · mismas condiciones atmosféricas
-                  </span>
-                )}
-              </div>
-              <div className="lab-lower">
-                <section className="panel">
-                  <div className="section-title">
-                    <h3>Evolución del humo</h3>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        download(
-                          `telemetria-${config.scenario}.csv`,
-                          "tiempo_s,temperatura_C,indice_humo,oxigeno_pct,energia_pct,personas_refugio\n" +
-                            frames
-                              .map((f) =>
-                                [
-                                  f.time,
-                                  f.temperature,
-                                  f.smoke,
-                                  f.oxygen,
-                                  f.energy,
-                                  f.refuge,
-                                ].join(","),
-                              )
-                              .join("\n"),
-                          "text/csv",
-                        )
-                      }
-                    >
-                      <ArrowDownToLine size={14} /> CSV
-                    </button>
-                  </div>
-                  <div className="chart">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={smokeChart}>
-                        <defs>
-                          <linearGradient
-                            id="smokeGradient"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#8cc5df"
-                              stopOpacity={0.3}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="#8cc5df"
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid
-                          stroke="#25313c"
-                          strokeDasharray="3 4"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="time"
-                          type="number"
-                          domain={[0, 180]}
-                          tick={{ fill: "#81909c", fontSize: 11 }}
-                          tickLine={false}
-                          unit=" s"
-                        />
-                        <YAxis
-                          domain={[0, 100]}
-                          tick={{ fill: "#81909c", fontSize: 11 }}
-                          tickLine={false}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: "#15212b",
-                            border: "1px solid #35434f",
-                            borderRadius: 8,
-                          }}
-                          labelFormatter={(v) => `${v} s`}
-                        />
-                        <Area
-                          name="Índice de humo"
-                          type="monotone"
-                          dataKey="smoke"
-                          stroke="#8cc5df"
-                          fill="url(#smokeGradient)"
-                          isAnimationActive={false}
-                        />
-                        {compareProtection && (
-                          <Area
-                            name="Con todas las barreras"
-                            dataKey="protectedSmoke"
-                            stroke="#c6ed9c"
-                            strokeDasharray="5 4"
-                            fill="transparent"
-                            isAnimationActive={false}
-                          />
-                        )}
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </section>
-                <section className="panel">
-                  <span className="eyebrow">ESTADO DEL ESCENARIO</span>
-                  <h3 className="phase-title">{frame.phase}</h3>
-                  <p className="muted">
-                    {scenarioInfo[config.scenario].description}
-                  </p>
-                  <p className="interpretation-note">
-                    {scenarioInfo[config.scenario].interpretation}
-                  </p>
-                  <div className="module-list">
-                    {frame.modules.map((module) => (
-                      <div key={module.id}>
-                        <span>{module.name}</span>
-                        <span
-                          className={
-                            module.smoke > 35 ? "warning-text" : "muted"
-                          }
-                        >
-                          {module.smoke.toFixed(0)} / 100 humo
-                        </span>
-                        <div className="meter">
-                          <i
-                            style={{ width: `${Math.min(100, module.smoke)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </>
+            <Lab
+              config={config}
+              onConfig={setConfig}
+              onOpenMethod={() => setShowMethod(true)}
+            />
           )}
 
           {page === "research" && (
@@ -1415,10 +1015,10 @@ function App() {
                 </div>
                 <div className="prompt-grid">
                   {[
-                    "¿Cómo influye la ventilación en la combustión en microgravedad?",
-                    "Compara BASS-II y FLEX para diseñar medidas de seguridad.",
-                    "¿Qué aprendimos del incendio de Mir sobre las rutas de escape?",
-                    "¿Qué investigaciones ayudan a detectar humo a tiempo?",
+                    "¿Por qué el fuego es distinto sin gravedad?",
+                    "¿Apagar los ventiladores ayuda a apagar un incendio en órbita?",
+                    "¿Qué aprendimos del incendio de la Mir?",
+                    "¿Cómo se detecta el humo a tiempo en una nave?",
                   ].map((text) => (
                     <button
                       key={text}
@@ -1487,8 +1087,26 @@ function App() {
                     <div className="answer-label">
                       <Sparkles size={17} /> Respuesta de Gemini
                     </div>
-                    <div className="answer-text">{answer}</div>
-                    <h4>Referencias recuperadas</h4>
+                    <AnswerText text={answer} />
+                    <div className="answer-actions">
+                      <button
+                        className="button secondary"
+                        disabled={asking}
+                        onClick={() => void ask(question, true)}
+                      >
+                        Más detalle
+                      </button>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setAnswer("");
+                          setQuestion("");
+                        }}
+                      >
+                        Hacer otra pregunta
+                      </button>
+                    </div>
+                    {aiSources.length > 0 && <h4>Fuentes usadas</h4>}
                     {aiSources.map((source, index) => (
                       <SourceLink key={index} url={source.url}>
                         {source.title}
@@ -1746,25 +1364,25 @@ function App() {
             >
               <X size={22} />
             </button>
-            <span className="eyebrow">MODELO EDUCATIVO</span>
-            <h2>Interpretar antes de concluir.</h2>
+            <h2>Cómo funciona el modelo</h2>
             <p>
-              El modelo aproxima el crecimiento del foco, la transferencia de
-              calor y humo entre compartimentos y la disponibilidad de recursos.
-              Cada escenario utiliza condiciones iniciales y constantes
-              ilustrativas.
+              La nave se divide en tres compartimentos: donde empieza el fuego,
+              el paso por el que hay que huir y el refugio. Cada segundo, el
+              modelo calcula cuánto calor y humo produce el fuego y cuánto pasa
+              al compartimento de al lado.
             </p>
             <p>
-              Los controles permiten comparar el efecto relativo de la
-              ventilación, el aislamiento, la supresión y el respaldo. El
-              contador de refugio depende de reglas simplificadas de acceso y
-              exposición.
+              El fuego crece más rápido con más oxígeno y más presión. Sin
+              gravedad, el aire caliente no sube: si la ventilación es muy baja,
+              la llama se queda sin oxígeno y se apaga, como se ha visto en los
+              ensayos BASS y Saffire. En una cabina cerrada, el calor sube la
+              presión; así se rompió el casco del Apollo 1.
             </p>
             <p>
-              Las cifras del simulador requieren validación para predecir un
-              incendio real. Apollo 1 ocurrió en tierra. Apollo 13 se representa
-              como una pérdida de recursos tras el fallo del tanque. Mir aporta
-              el caso de incendio interior en microgravedad.
+              Una persona llega al refugio si la ruta tiene poco humo y poco
+              calor. Es una regla simplificada: no mide la toxicidad ni
+              garantiza la supervivencia. Las constantes son ilustrativas y no
+              se han ajustado con los datos de la NASA, que se muestran aparte.
             </p>
             <button
               className="button primary"
@@ -1781,87 +1399,33 @@ function App() {
     </div>
   );
 }
-function Range({
-  label,
-  value,
-  unit,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
+/** Renders short answers: plain sentences plus "- " bullets, with [ID] citations as chips. */
+function AnswerText({ text }: { text: string }) {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const cite = (line: string) =>
+    line.split(/(\[[^\]]+\])/g).map((part, index) =>
+      /^\[[^\]]+\]$/.test(part) ? (
+        <span className="cite" key={index}>
+          {part.slice(1, -1)}
+        </span>
+      ) : (
+        part
+      ),
+    );
+  const bullets = lines.filter((line) => /^[-•*]\s/.test(line));
+  const prose = lines.filter((line) => !/^[-•*]\s/.test(line));
   return (
-    <label className="range-control">
-      <span>
-        {label}
-        <strong>
-          {value.toLocaleString("es", { maximumFractionDigits: 2 })}{" "}
-          <small>{unit}</small>
-        </strong>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <span className="range-limits">
-        <span>{min}</span>
-        <span>{max}</span>
-      </span>
-    </label>
-  );
-}
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className="toggle-control">
-      <span>{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="toggle-track" />
-    </label>
-  );
-}
-function Telemetry({
-  label,
-  value,
-  unit,
-  color,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  color: string;
-}) {
-  return (
-    <div className={`telemetry ${color}`}>
-      <span>{label}</span>
-      <strong>
-        {value}
-        <small>{unit}</small>
-      </strong>
-      <div />
+    <div className="answer-text">
+      {prose.map((line, index) => (
+        <p key={index}>{cite(line)}</p>
+      ))}
+      {bullets.length > 0 && (
+        <ul>
+          {bullets.map((line, index) => (
+            <li key={index}>{cite(line.replace(/^[-•*]\s/, ""))}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
