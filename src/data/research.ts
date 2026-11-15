@@ -484,35 +484,86 @@ export const sources = [
   },
 ];
 
-export const historicalCases = [
+export type HistoricalCase = {
+  id: "apollo1" | "apollo13" | "mir";
+  title: string;
+  year: string;
+  date: string;
+  place: string;
+  crew: string;
+  summary: string;
+  timeline: [string, string][];
+  lesson: string;
+  changes: string[];
+  sourceUrl: string;
+};
+
+export const historicalCases: HistoricalCase[] = [
   {
     id: "apollo1",
     title: "Apollo 1",
     year: "1967",
+    date: "27 de enero de 1967",
+    place: "Plataforma 34, Cabo Kennedy · ensayo en tierra",
+    crew: "Gus Grissom, Ed White y Roger Chaffee",
     summary:
-      "Un incendio durante una prueba en tierra se propagó en una cabina con oxígeno puro a presión elevada. Murieron los tres astronautas.",
+      "Durante un ensayo con la cabina sellada y oxígeno puro a 115 kPa, un cable hizo chispa bajo el asiento de Grissom. El fuego se extendió en segundos. Murieron los tres astronautas.",
+    timeline: [
+      ["0 s", "La tripulación avisa: «¡Fuego!»."],
+      ["~15 s", "La presión llega a unos 200 kPa y rompe el casco."],
+      ["~5 min", "El personal de la plataforma logra abrir las tres capas de la escotilla."],
+    ],
     lesson:
-      "Atmósfera, materiales, cableado, escotilla y capacidad de rescate deben evaluarse como un sistema.",
+      "Atmósfera, materiales y salida de emergencia deben diseñarse juntos.",
+    changes: [
+      "Escotilla que abre hacia fuera en segundos",
+      "Mezcla de nitrógeno y oxígeno en tierra",
+      "Materiales ignífugos y cableado protegido",
+    ],
     sourceUrl: "https://sma.nasa.gov/sma-disciplines/accllp/apollo-1",
   },
   {
     id: "apollo13",
     title: "Apollo 13",
     year: "1970",
+    date: "13 de abril de 1970",
+    place: "Camino a la Luna, a unos 322 000 km de la Tierra",
+    crew: "Jim Lovell, Jack Swigert y Fred Haise",
     summary:
-      "La ruptura de un tanque de oxígeno en el módulo de servicio desencadenó la pérdida de recursos. Los tres astronautas regresaron a salvo.",
+      "Al agitar los tanques de oxígeno, un cable dañado dentro del tanque 2 lo hizo reventar. La nave perdió oxígeno y electricidad. Los tres volvieron vivos usando el módulo lunar como bote salvavidas.",
+    timeline: [
+      ["55:53:20", "Se encienden los ventiladores del tanque 2."],
+      ["55:54:53", "El tanque revienta y arranca el panel 4."],
+      ["~90 h", "Aquarius, hecho para 2 personas y 45 h, sostiene a 3 hasta casa."],
+    ],
     lesson:
-      "La separación de recursos y un refugio con autonomía sostienen la supervivencia tras fallos en cascada.",
+      "Un refugio con recursos propios salva a la tripulación cuando falla todo lo demás.",
+    changes: [
+      "Tanques sin ventiladores ni cables expuestos",
+      "Tercer tanque de oxígeno separado",
+      "Batería de reserva en el módulo de servicio",
+    ],
     sourceUrl: "https://sma.nasa.gov/sma-disciplines/accllp/apollo-13",
   },
   {
     id: "mir",
     title: "Estación Mir",
     year: "1997",
+    date: "23 de febrero de 1997",
+    place: "Órbita terrestre, módulo Kvant-1",
+    crew: "Seis personas, entre ellas el astronauta de la NASA Jerry Linenger",
     summary:
-      "Un incendio en un generador de oxígeno llenó la estación de humo y bloqueó una ruta a las Soyuz. Los seis tripulantes sobrevivieron.",
+      "Una vela química de oxígeno se incendió y lanzó un chorro de llama de casi un metro. Bloqueó el paso a una de las dos naves Soyuz y llenó la estación de humo. Los seis sobrevivieron.",
+    timeline: [
+      ["0 s", "La vela se enciende y lanza llamas y metal fundido."],
+      ["Minutos", "La tripulación se pone respiradores y vacía tres extintores."],
+      ["Horas", "El humo tarda mucho más que el fuego en desaparecer."],
+    ],
     lesson:
-      "La ubicación del fuego, la protección respiratoria y la disponibilidad de rutas cambian la capacidad de respuesta.",
+      "Dónde está el fuego decide qué rutas de escape quedan libres.",
+    changes: [
+      "Sus lecciones pasaron al diseño y las operaciones de la Estación Espacial Internacional",
+    ],
     sourceUrl:
       "https://www.nasa.gov/history/25-years-ago-fire-aboard-space-station-mir/",
   },

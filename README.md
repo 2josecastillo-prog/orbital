@@ -10,16 +10,17 @@ La clave de Google se configura en `.env.local`, siguiendo `.env.example`. Es un
 
 ## Funciones
 
-- Vista general y biblioteca de 14 investigaciones con filtros y referencias.
-- Comparación de hasta cuatro estudios por combustible, instalación, variables, mediciones y limitaciones.
-- Exploración de 14 tablas CSV originales de NASA PSI, con filtros de registros, selección de ejes, descarga de datos e importación local de CSV.
-- Inicio con un recorrido de tres pasos y un glosario para quien no conoce el tema.
-- Modelos 3D a escala real: Mir de 1997 (bloque base, Kvant-1 con la torre Sofora, Kvant-2, Kristall, Spektr, Priroda y dos Soyuz), Apollo 13 (módulos de mando y de servicio con el panel 4 arrancado, y el módulo lunar acoplado), Apollo 1 en la plataforma con la sala blanca, y la nave conceptual AEGIS. Vista por dentro con tripulación, humo y etiquetas de estado.
-- Fuego con comportamiento distinto según el entorno: llama redonda y azulada en microgravedad, llama alta con gravedad, chorro con chispas en la vela de oxígeno de Mir y fuga de gas en Apollo 13.
-- Simulación de 180 segundos con narración en lenguaje sencillo, línea de tiempo con sucesos, estados en palabras («Cuesta ver», «Peligroso»), resultado final con sus causas y pruebas de «¿y si cambias una sola cosa?».
-- Datos experimentales con nombres de columna traducidos y una frase que explica la tendencia de cada gráfico.
-- Asistente Gemini con respuestas breves (unas 90 palabras, botón «Más detalle»), referencias limitadas al catálogo y mensajes explícitos de error o cuota.
-- Recursos históricos, informes técnicos y explicación de los supuestos del modelo.
+- **Inicio**: qué hace distinto al fuego en el espacio, tres datos clave, un recorrido recomendado y cuatro ideas básicas.
+- **Los tres accidentes**: Apollo 1, Apollo 13 y Mir con fecha, lugar, tripulación, cronología, lección y qué cambió después.
+- **Simulador 3D**:
+  - Modelos a escala real de Mir (1997), Apollo 13 (CSM y módulo lunar acoplados, con el panel 4 desprendiéndose), Apollo 1 en la plataforma de noche y la nave conceptual AEGIS. Tierra y Luna procedurales de fondo.
+  - Tripulación articulada de 1,75 m: en órbita adopta la postura neutra de microgravedad y se desplaza agarrándose; en tierra camina; en el Apollo 1 está tumbada en los asientos.
+  - Fuego con un shader físico: en microgravedad es esférico, azul, estable y sin hollín; con gravedad es una lágrima amarilla que parpadea; con ventilación se estira en la dirección del aire; la vela de Mir lanza un chorro con chispas que viajan en línea recta. En el Apollo 13 no hay llama visible, sino una nube de oxígeno.
+  - El humo sube y forma una capa en el techo con gravedad; sin gravedad se queda donde lo lleva la ventilación.
+  - Cámara general, enfocada al fuego o siguiendo a la tripulación, y pantalla completa.
+  - Narración en lenguaje sencillo, línea de tiempo con sucesos, resultado final con causas y pruebas de «¿y si cambias una sola cosa?».
+- **Investigaciones, datos y comparador**: 14 investigaciones de la NASA, sus tablas originales con columnas traducidas y una frase que explica la tendencia de cada gráfico.
+- **Asistente IA**: Gemini responde en unas 90 palabras, con botón «Más detalle» y fuentes del catálogo.
 
 ## Datos y alcance
 
@@ -29,7 +30,7 @@ Cada fila representa un registro de la tabla original. Algunas tablas describen 
 
 La fotografía de órbita es NASA ISS063-E-058598. Su crédito está en `public/resources/image-credit.json`. Los informes técnicos originales se enumeran en `public/resources/manifest.json`. Las copias PDF descargadas permanecen en la carpeta local y el servidor publicado remite a sus originales NASA para evitar duplicar archivos grandes.
 
-El motor de `src/lib/simulation.ts` usa constantes ilustrativas declaradas. Reproduce de forma cualitativa comportamientos documentados: sin gravedad, una llama con muy poca ventilación se apaga por falta de oxígeno (ensayos BASS y Saffire); más oxígeno y más presión aceleran el fuego; en una cabina sellada el calor eleva la presión, como en el Apollo 1, cuyo casco se rompió cerca de 200 kPa. La vela de oxígeno de Mir produce su propio oxígeno y no depende de la ventilación. Sus curvas y reglas de acceso al refugio son educativas. Las tablas de NASA se muestran como evidencia experimental independiente y no se han utilizado para calibrar estas curvas. La geometría es esquemática. El conteo de personas en refugio expresa accesibilidad según las reglas del modelo, sin demostrar supervivencia ni certificar una nave. El tiempo de Apollo 13 representa una secuencia acelerada de pérdida de recursos. Apollo 1 corresponde a una prueba terrestre.
+El motor de `src/lib/simulation.ts` usa constantes ilustrativas declaradas. Cada caso se ajustó a su historia: el casco del Apollo 1 se rompe unos 15 s después del aviso de fuego; en Apollo 13 se agitan los tanques antes de la explosión; la vela de Mir no se apaga con extintores y se consume en unos 90 s. Reproduce de forma cualitativa comportamientos documentados: sin gravedad, una llama con muy poca ventilación se apaga por falta de oxígeno (ensayos BASS y Saffire); más oxígeno y más presión aceleran el fuego; en una cabina sellada el calor eleva la presión, como en el Apollo 1, cuyo casco se rompió cerca de 200 kPa. La vela de oxígeno de Mir produce su propio oxígeno y no depende de la ventilación. Sus curvas y reglas de acceso al refugio son educativas. Las tablas de NASA se muestran como evidencia experimental independiente y no se han utilizado para calibrar estas curvas. La geometría es esquemática. El conteo de personas en refugio expresa accesibilidad según las reglas del modelo, sin demostrar supervivencia ni certificar una nave. El tiempo de Apollo 13 representa una secuencia acelerada de pérdida de recursos. Apollo 1 corresponde a una prueba terrestre.
 
 ## Comprobaciones y publicación
 

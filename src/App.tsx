@@ -62,14 +62,14 @@ type Page =
   | "sources";
 type Investigation = (typeof investigations)[number];
 const nav = [
-  { id: "overview", label: "Vista general", icon: LayoutDashboard },
-  { id: "lab", label: "Laboratorio 3D", icon: Orbit },
-  { id: "research", label: "Investigaciones", icon: FlaskConical },
-  { id: "data", label: "Datos experimentales", icon: Activity },
-  { id: "compare", label: "Comparador", icon: Layers3 },
-  { id: "history", label: "Lecciones históricas", icon: BookOpen },
-  { id: "assistant", label: "Asistente científico", icon: Sparkles },
-  { id: "sources", label: "Fuentes y método", icon: Database },
+  { id: "overview", label: "Inicio", icon: LayoutDashboard, group: "Aprender" },
+  { id: "history", label: "Los tres accidentes", icon: BookOpen, group: "Aprender" },
+  { id: "lab", label: "Simulador 3D", icon: Orbit, group: "Aprender" },
+  { id: "research", label: "Investigaciones", icon: FlaskConical, group: "Evidencia" },
+  { id: "data", label: "Datos de ensayos", icon: Activity, group: "Evidencia" },
+  { id: "compare", label: "Comparador", icon: Layers3, group: "Evidencia" },
+  { id: "assistant", label: "Asistente IA", icon: Sparkles, group: "Ayuda" },
+  { id: "sources", label: "Fuentes y método", icon: Database, group: "Ayuda" },
 ] as const;
 const scenarioNames: Record<ScenarioId, string> = {
   mir: "Estación Mir",
@@ -285,12 +285,15 @@ function App() {
             ORBITAL<span className="brand-sub">FIRE LAB</span>
           </span>
         </button>
-        <div className="sidebar-label">ESPACIO DE INVESTIGACIÓN</div>
         <nav>
-          {nav.map((item) => (
+          {nav.map((item, index) => (
+            <div key={item.id} className="nav-entry">
+            {(index === 0 || nav[index - 1].group !== item.group) && (
+              <span className="nav-group">{item.group}</span>
+            )}
             <button
-              key={item.id}
               className={cx("nav-item", page === item.id && "active")}
+              aria-current={page === item.id ? "page" : undefined}
               onClick={() => navigate(item.id)}
             >
               <item.icon size={18} />
@@ -299,21 +302,13 @@ function App() {
                 <b>{selected.length}</b>
               )}
             </button>
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="orbit-mark">
-            <Orbit size={34} />
-          </div>
-          <p>
-            Ciencia para
-            <br />
-            <strong>volver a casa.</strong>
-          </p>
-          <span>Exploración espacial · Seguridad humana</span>
+          <p>Datos abiertos de la NASA. Simulación educativa.</p>
           <button onClick={() => navigate("sources")}>
-            <CircleHelp size={15} /> Acerca de este laboratorio{" "}
-            <ChevronRight size={14} />
+            <CircleHelp size={15} /> Cómo se hizo <ChevronRight size={14} />
           </button>
         </div>
       </aside>
@@ -332,9 +327,6 @@ function App() {
             <strong>{nav.find((item) => item.id === page)?.label}</strong>
           </div>
           <div className="top-actions">
-            <span className="data-status">
-              <i /> Fuentes NASA
-            </span>
             <button
               className="icon-button"
               title="Buscar investigaciones"
@@ -343,261 +335,101 @@ function App() {
             >
               <Search size={18} />
             </button>
-            <div className="avatar">OF</div>
           </div>
         </header>
         <main>
           {page === "overview" && (
             <>
-              <div className="page-heading">
-                <div>
-                  <span className="eyebrow">
-                    LABORATORIO DE COMBUSTIÓN ESPACIAL
-                  </span>
-                  <h1>Ciencia que protege la misión.</h1>
-                  <p>
-                    Explora la evidencia. Comprende los riesgos. Diseña mejores
-                    respuestas.
-                  </p>
-                </div>
-                <button
-                  className="button secondary"
-                  onClick={() => navigate("sources")}
-                >
-                  <Database size={16} /> Explorar las fuentes
-                </button>
-              </div>
               <section className="hero">
                 <div className="hero-image" />
                 <div className="hero-shade" />
                 <div className="hero-content">
-                  <div className="hero-kicker">
-                    <i /> DEL EXPERIMENTO A LA SEGURIDAD
-                  </div>
-                  <h2>
-                    El fuego cambia.
-                    <br />
-                    La vida sigue siendo
-                    <br />
-                    <em>la prioridad.</em>
-                  </h2>
+                  <h1>El fuego en el espacio no se comporta como en la Tierra.</h1>
                   <p>
-                    Un laboratorio para entender la combustión en microgravedad
-                    y explorar cómo proteger a quienes viajan más lejos.
+                    Sin gravedad, la llama es redonda y el humo no sube. En una
+                    cabina cerrada, una chispa puede ser mortal en segundos.
+                    Revive tres accidentes reales y descubre qué decisiones
+                    salvan a una tripulación.
                   </p>
-                  <button
-                    className="button primary"
-                    onClick={() => navigate("lab")}
-                  >
-                    Entrar al simulador <ArrowRight size={17} />
-                  </button>
-                </div>
-                <div className="hero-coordinate">
-                  <span>TIERRA · ÓRBITA BAJA</span>
-                  <div className="orbit-track">
-                    <i />
+                  <div className="hero-actions">
+                    <button className="button primary" onClick={() => navigate("lab")}>
+                      Abrir el simulador <ArrowRight size={17} />
+                    </button>
+                    <button className="button ghost" onClick={() => navigate("history")}>
+                      Ver los accidentes
+                    </button>
                   </div>
-                  <strong>
-                    Una nueva perspectiva
-                    <br />
-                    sobre el fuego.
-                  </strong>
-                </div>
-                <div className="hero-footer">
-                  <span>APOLLO 1</span>
-                  <span>APOLLO 13</span>
-                  <span>MIR</span>
-                  <span>AEGIS · CONCEPTO</span>
                 </div>
               </section>
+
+              <section className="facts" aria-label="Por qué importa">
+                <article>
+                  <strong>~15 s</strong>
+                  <p>Tardó el Apollo 1 en pasar de la primera chispa a la rotura del casco. La escotilla necesitaba al menos 90 s.</p>
+                  <button className="text-button" onClick={() => { changeScenario("apollo1"); navigate("lab"); }}>
+                    Simular Apollo 1 <ArrowRight size={14} />
+                  </button>
+                </article>
+                <article>
+                  <strong>1 de 2</strong>
+                  <p>Naves de escape de la Mir quedó bloqueada por el fuego en 1997. Las seis personas a bordo sobrevivieron.</p>
+                  <button className="text-button" onClick={() => { changeScenario("mir"); navigate("lab"); }}>
+                    Simular Mir <ArrowRight size={14} />
+                  </button>
+                </article>
+                <article>
+                  <strong>2 → 3</strong>
+                  <p>El módulo lunar del Apollo 13 estaba hecho para 2 personas durante 45 h. Mantuvo a 3 durante unas 90 h.</p>
+                  <button className="text-button" onClick={() => { changeScenario("apollo13"); navigate("lab"); }}>
+                    Simular Apollo 13 <ArrowRight size={14} />
+                  </button>
+                </article>
+              </section>
+
               <section className="start-here" aria-labelledby="start-title">
-                <h2 id="start-title">Empieza aquí</h2>
-                <p>
-                  No hace falta saber de química ni de datos. En diez minutos
-                  puedes entender por qué el fuego en una nave es tan
-                  peligroso y qué decisiones salvan vidas.
-                </p>
+                <h2 id="start-title">Recorrido recomendado</h2>
                 <ol className="start-steps">
                   <li>
                     <button onClick={() => navigate("history")}>
-                      <strong>Conoce tres accidentes reales</strong>
-                      <span>Apollo 1, Apollo 13 y la estación Mir en un minuto cada uno.</span>
+                      <strong>Conoce los tres accidentes</strong>
+                      <span>Qué pasó, en qué orden y qué cambió después.</span>
                     </button>
                   </li>
                   <li>
                     <button onClick={() => navigate("lab")}>
-                      <strong>Revívelos en 3D y cambia el final</strong>
-                      <span>Activa una protección y mira cuántas personas llegan a salvo.</span>
+                      <strong>Revívelos en 3D</strong>
+                      <span>Activa una protección y mira si la tripulación llega a salvo.</span>
                     </button>
                   </li>
                   <li>
-                    <button onClick={() => navigate("data")}>
-                      <strong>Mira los ensayos de la NASA</strong>
-                      <span>Cada punto del gráfico es un experimento hecho en órbita.</span>
+                    <button onClick={() => navigate("research")}>
+                      <strong>Mira la ciencia detrás</strong>
+                      <span>14 investigaciones de la NASA sobre fuego en órbita.</span>
                     </button>
                   </li>
                 </ol>
+              </section>
+
+              <section className="glossary-block" aria-labelledby="glossary-title">
+                <h2 id="glossary-title">Cuatro ideas para entenderlo todo</h2>
                 <dl className="glossary">
                   <div>
-                    <dt>Microgravedad</dt>
-                    <dd>En órbita todo flota. El aire caliente no sube, así que la llama es redonda, más lenta y a veces se ahoga sola.</dd>
+                    <dt>Sin gravedad</dt>
+                    <dd>El aire caliente no sube. La llama es redonda, azul y más lenta, y puede ahogarse sola.</dd>
                   </div>
                   <div>
-                    <dt>Oxígeno disponible</dt>
-                    <dd>Cuanto más oxígeno hay y más presión tiene, más rápido arde todo. Apollo 1 tenía 5 veces más que el aire normal.</dd>
+                    <dt>Más oxígeno</dt>
+                    <dd>Con más oxígeno o más presión todo arde más rápido. Apollo 1 tenía 5 veces el del aire normal.</dd>
                   </div>
                   <div>
                     <dt>Ventilación</dt>
-                    <dd>En órbita, los ventiladores son lo único que mueve el aire. Apagarlos es uno de los primeros pasos ante un fuego.</dd>
+                    <dd>En órbita, solo los ventiladores mueven el aire. Apagarlos es uno de los primeros pasos ante un fuego.</dd>
                   </div>
                   <div>
                     <dt>Refugio</dt>
-                    <dd>Un lugar separado, con aire y energía propios, al que la tripulación puede ir mientras pasa el peligro.</dd>
+                    <dd>Un lugar separado, con aire y energía propios, donde esperar a que pase el peligro.</dd>
                   </div>
                 </dl>
-              </section>
-              <div className="metric-grid">
-                <div className="metric-card">
-                  <FlaskConical />
-                  <div>
-                    <span>Investigaciones catalogadas</span>
-                    <strong>
-                      {investigations.length}
-                      <small>con referencias</small>
-                    </strong>
-                  </div>
-                </div>
-                <div className="metric-card">
-                  <ShieldCheck />
-                  <div>
-                    <span>Áreas de seguridad</span>
-                    <strong>
-                      3<small>prevenir · detectar · suprimir</small>
-                    </strong>
-                  </div>
-                </div>
-                <div className="metric-card">
-                  <Orbit />
-                  <div>
-                    <span>Escenarios interactivos</span>
-                    <strong>
-                      4<small>históricos y conceptuales</small>
-                    </strong>
-                  </div>
-                </div>
-              </div>
-              <div className="overview-grid">
-                <section className="panel">
-                  <div className="section-title">
-                    <div>
-                      <span className="eyebrow">BIBLIOTECA CIENTÍFICA</span>
-                      <h2>De los datos a las decisiones</h2>
-                    </div>
-                    <button
-                      className="text-button"
-                      onClick={() => navigate("research")}
-                    >
-                      Ver todas <ArrowRight size={16} />
-                    </button>
-                  </div>
-                  {["Prevención", "Detección", "Supresión"].map(
-                    (cat, index) => (
-                      <button
-                        key={cat}
-                        className="research-row"
-                        onClick={() => {
-                          setCategory(cat);
-                          navigate("research");
-                        }}
-                      >
-                        <span className={`category-icon color-${index}`}>
-                          {index === 0 ? (
-                            <ShieldCheck size={21} />
-                          ) : index === 1 ? (
-                            <Activity size={21} />
-                          ) : (
-                            <FlaskConical size={21} />
-                          )}
-                        </span>
-                        <span>
-                          <strong>{cat}</strong>
-                          <small>
-                            {index === 0
-                              ? "Materiales, atmósfera y propagación"
-                              : index === 1
-                                ? "Humo, aerosoles y señales tempranas"
-                                : "Extinción y respuesta al fuego"}
-                          </small>
-                        </span>
-                        <span className="row-count">
-                          {
-                            investigations.filter((i) => i.category === cat)
-                              .length
-                          }{" "}
-                          estudios
-                        </span>
-                        <ChevronRight size={17} />
-                      </button>
-                    ),
-                  )}
-                </section>
-                <section className="panel ai-promo">
-                  <div className="ai-symbol">
-                    <Sparkles size={24} />
-                  </div>
-                  <span className="eyebrow">ASISTENTE CIENTÍFICO</span>
-                  <h2>
-                    Hazle preguntas
-                    <br /> a la evidencia.
-                  </h2>
-                  <p>
-                    Relaciona investigaciones, explora condiciones
-                    experimentales y consulta las fuentes con Gemini.
-                  </p>
-                  <button
-                    className="text-button"
-                    onClick={() => navigate("assistant")}
-                  >
-                    Abrir asistente <ArrowRight size={16} />
-                  </button>
-                  <span className="subtle-status">
-                    {aiConfigured
-                      ? "Gemini conectado"
-                      : "Requiere configurar una clave de Gemini"}
-                  </span>
-                </section>
-              </div>
-              <section className="lessons-section">
-                <div className="section-title">
-                  <div>
-                    <span className="eyebrow">APRENDER DE LA HISTORIA</span>
-                    <h2>Tres sucesos. Lecciones que siguen vigentes.</h2>
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => navigate("history")}
-                  >
-                    Explorar historias <ArrowRight size={16} />
-                  </button>
-                </div>
-                <div className="history-teasers">
-                  {historicalCases.slice(0, 3).map((item, index) => (
-                    <button key={item.id} onClick={() => navigate("history")}>
-                      <span className="history-date">{item.year}</span>
-                      <h3>{item.title}</h3>
-                      <p>
-                        {
-                          [
-                            "Atmósfera y acceso a la salida",
-                            "Independencia de los sistemas",
-                            "Contención y rutas de evacuación",
-                          ][index]
-                        }
-                      </p>
-                      <ArrowRight size={18} />
-                    </button>
-                  ))}
-                </div>
               </section>
             </>
           )}
@@ -614,12 +446,8 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">INVESTIGACIONES NASA</span>
-                  <h1>Encuentra la evidencia.</h1>
-                  <p>
-                    Objetivos, materiales, condiciones y mediciones en un mismo
-                    lugar.
-                  </p>
+                  <h1>Investigaciones de la NASA</h1>
+                  <p>14 experimentos sobre cómo empieza, se detecta y se apaga el fuego en órbita.</p>
                 </div>
                 <button
                   className="button secondary"
@@ -709,9 +537,9 @@ function App() {
                     </button>
                     <p>{item.summary}</p>
                     <div className="card-metadata">
-                      <span>COMBUSTIBLE</span>
+                      <span>Combustible</span>
                       <strong>{item.fuel}</strong>
-                      <span>INSTALACIÓN</span>
+                      <span>Instalación</span>
                       <strong>{item.hardware}</strong>
                     </div>
                     <button
@@ -762,14 +590,8 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">
-                    NASA PHYSICAL SCIENCES INFORMATICS
-                  </span>
-                  <h1>La evidencia, a tu alcance.</h1>
-                  <p>
-                    Explora tablas originales, filtra ensayos y relaciona sus
-                    variables.
-                  </p>
+                  <h1>Datos de los ensayos</h1>
+                  <p>Las tablas originales de la NASA, con un gráfico para comparar dos medidas.</p>
                 </div>
               </div>
               <ExperimentalExplorer />
@@ -779,12 +601,8 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">COMPARACIÓN CIENTÍFICA</span>
-                  <h1>Las diferencias también enseñan.</h1>
-                  <p>
-                    Compara hasta cuatro investigaciones y sus condiciones de
-                    ensayo.
-                  </p>
+                  <h1>Comparador</h1>
+                  <p>Pon hasta cuatro investigaciones lado a lado.</p>
                 </div>
                 <button
                   className="button secondary"
@@ -904,71 +722,69 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">MEMORIA DE LA EXPLORACIÓN</span>
-                  <h1>La seguridad se aprende.</h1>
-                  <p>
-                    Tres incidentes para comprender cómo se encadenan los
-                    fallos.
-                  </p>
+                  <h1>Los tres accidentes</h1>
+                  <p>Qué pasó, en qué orden y qué cambió después. Cada caso se puede revivir en el simulador.</p>
                 </div>
               </div>
               <div className="history-list">
-                {historicalCases.map((item, index) => (
+                {historicalCases.map((item) => (
                   <article className="history-card" key={item.id}>
-                    <div className="history-side">
-                      <span>{item.year}</span>
-                      <Orbit size={65} />
-                      <strong>
-                        {
-                          [
-                            "PRUEBA EN TIERRA",
-                            "VUELO TRANSLUNAR",
-                            "ÓRBITA TERRESTRE",
-                          ][index]
-                        }
-                      </strong>
+                    <header className="history-head">
+                      <span className="history-year">{item.year}</span>
+                      <div>
+                        <h2>{item.title}</h2>
+                        <p className="history-meta">{item.date} · {item.place}</p>
+                        <p className="history-meta">Tripulación: {item.crew}</p>
+                      </div>
+                    </header>
+                    <p className="history-summary">{item.summary}</p>
+                    <div className="history-grid">
+                      <div>
+                        <h3>Cronología</h3>
+                        <ol className="history-timeline">
+                          {item.timeline.map(([when, what]) => (
+                            <li key={when}>
+                              <time>{when}</time>
+                              <span>{what}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                      <div>
+                        <h3>Qué cambió después</h3>
+                        <ul className="history-changes">
+                          {item.changes.map((change) => (
+                            <li key={change}>
+                              <Check size={14} /> {change}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
-                    <div className="history-body">
-                      <h2>{item.title}</h2>
-                      <p>{item.summary}</p>
-                      <div className="lesson">
-                        <ShieldCheck size={20} />
-                        <div>
-                          <span>LECCIÓN DE SEGURIDAD</span>
-                          <p>{item.lesson}</p>
-                        </div>
-                      </div>
-                      <div className="history-actions">
-                        <SourceLink url={item.sourceUrl}>
-                          Documentación histórica
-                        </SourceLink>
-                        <button
-                          className="button secondary"
-                          onClick={() => {
-                            changeScenario(
-                              (["apollo1", "apollo13", "mir"] as ScenarioId[])[
-                                index
-                              ],
-                            );
-                            navigate("lab");
-                          }}
-                        >
-                          Explorar escenario <ArrowRight size={15} />
-                        </button>
-                      </div>
+                    <div className="lesson">
+                      <ShieldCheck size={18} />
+                      <p>{item.lesson}</p>
+                    </div>
+                    <div className="history-actions">
+                      <button
+                        className="button primary"
+                        onClick={() => {
+                          changeScenario(item.id);
+                          navigate("lab");
+                        }}
+                      >
+                        Revivir en 3D <ArrowRight size={15} />
+                      </button>
+                      <SourceLink url={item.sourceUrl}>Informe de la NASA</SourceLink>
                     </div>
                   </article>
                 ))}
               </div>
               <section className="concept-banner">
-                <ShieldCheck size={36} />
+                <ShieldCheck size={30} />
                 <div>
-                  <h2>AEGIS · explorar una arquitectura más resiliente</h2>
-                  <p>
-                    Prueba compartimentación, supresión y reservas
-                    independientes. Evalúa cómo cambian los resultados dentro de
-                    los límites del modelo.
-                  </p>
+                  <h2>AEGIS: una nave con las tres lecciones</h2>
+                  <p>Compuertas automáticas, supresión con agua nebulizada y un refugio autónomo. Pruébala con el mismo tipo de fuego.</p>
                 </div>
                 <button
                   className="button primary"
@@ -977,7 +793,7 @@ function App() {
                     navigate("lab");
                   }}
                 >
-                  Explorar AEGIS <ArrowRight size={16} />
+                  Probar AEGIS <ArrowRight size={16} />
                 </button>
               </section>
             </>
@@ -987,32 +803,18 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">GEMINI · ASISTENTE CIENTÍFICO</span>
-                  <h1>Una pregunta abre otra perspectiva.</h1>
-                  <p>
-                    Explora la biblioteca con respuestas acompañadas de sus
-                    fuentes.
-                  </p>
+                  <h1>Asistente IA</h1>
+                  <p>Respuestas cortas basadas en el catálogo, con sus fuentes.</p>
                 </div>
                 <span className={cx("tag", aiConfigured ? "lime" : "peach")}>
                   {!aiChecked
                     ? "Comprobando conexión"
                     : aiConfigured
-                      ? "Conectado"
-                      : "Configuración pendiente"}
+                      ? "Gemini conectado"
+                      : "Sin conectar"}
                 </span>
               </div>
               <section className="assistant-panel">
-                <div className="assistant-intro">
-                  <div className="ai-symbol">
-                    <Sparkles size={28} />
-                  </div>
-                  <h2>¿Qué quieres investigar?</h2>
-                  <p>
-                    Consulta condiciones experimentales, compara métodos y
-                    conecta hallazgos con problemas de seguridad.
-                  </p>
-                </div>
                 <div className="prompt-grid">
                   {[
                     "¿Por qué el fuego es distinto sin gravedad?",
@@ -1036,11 +838,10 @@ function App() {
                   <div className="setup-note">
                     <CircleHelp size={20} />
                     <div>
-                      <strong>Conecta tu cuenta de Google AI Studio</strong>
+                      <strong>El asistente necesita una clave de Gemini</strong>
                       <p>
-                        El servicio necesita una clave de Gemini guardada en el
-                        servidor como GEMINI_API_KEY. El nivel gratuito está
-                        sujeto a disponibilidad y límites de Google.
+                        Guárdala en el servidor como GEMINI_API_KEY. Mientras
+                        tanto, puedes usar el resto del laboratorio.
                       </p>
                       <SourceLink url="https://aistudio.google.com/apikey">
                         Crear una clave en AI Studio
@@ -1057,15 +858,13 @@ function App() {
                 >
                   <textarea
                     aria-label="Pregunta científica"
-                    placeholder="Pregunta sobre los experimentos, las condiciones o las lecciones históricas…"
+                    placeholder="Escribe tu pregunta. Por ejemplo: ¿por qué el humo no sube en órbita?"
                     value={question}
                     maxLength={2000}
                     onChange={(e) => setQuestion(e.target.value)}
                   />
                   <div>
-                    <span>
-                      Respuestas basadas en el catálogo y sus referencias
-                    </span>
+                    <span>Respuestas de unas 90 palabras, con fuentes</span>
                     <button
                       className="button primary"
                       disabled={
@@ -1122,55 +921,39 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">TRAZABILIDAD Y MÉTODO</span>
-                  <h1>Cada afirmación tiene un origen.</h1>
-                  <p>
-                    Consulta las fuentes, descarga recursos y conoce el alcance
-                    del laboratorio.
-                  </p>
+                  <h1>Fuentes y método</h1>
+                  <p>De dónde sale cada dato y qué puede y qué no puede decir el simulador.</p>
                 </div>
               </div>
               <div className="method-grid">
                 <section className="panel">
-                  <Database size={24} />
-                  <h3>Evidencia experimental</h3>
-                  <p>
-                    El catálogo resume investigaciones documentadas por NASA.
-                    Las tablas descargadas conservan sus fuentes y unidades. Los
-                    valores ausentes se mantienen como no disponibles.
-                  </p>
+                  <Database size={22} />
+                  <h3>Datos reales</h3>
+                  <p>Las 14 tablas son copias sin modificar de NASA Physical Sciences Informatics (licencia CC0). Las casillas vacías se dejan vacías.</p>
                 </section>
                 <section className="panel">
-                  <Orbit size={24} />
-                  <h3>Escenarios educativos</h3>
-                  <p>
-                    La simulación utiliza un modelo simplificado de
-                    compartimentos y constantes ilustrativas. La supervivencia
-                    real exige validación experimental y análisis de ingeniería.
-                  </p>
+                  <Orbit size={22} />
+                  <h3>Simulación educativa</h3>
+                  <p>Reproduce lo que se sabe de forma cualitativa: la llama sin gravedad, el efecto del oxígeno, la presión en una cabina cerrada. No predice un incendio real ni certifica una nave.</p>
                 </section>
                 <section className="panel">
-                  <Sparkles size={24} />
-                  <h3>Interpretación con IA</h3>
-                  <p>
-                    Gemini recibe contexto de la biblioteca. Revisa las
-                    referencias y las condiciones del experimento antes de
-                    aplicar una respuesta a un diseño.
-                  </p>
+                  <Sparkles size={22} />
+                  <h3>Asistente IA</h3>
+                  <p>Gemini solo ve las fichas del catálogo y debe citar sus fuentes. Revisa siempre la referencia original.</p>
                 </section>
               </div>
               <section className="panel sources-panel">
                 <div className="section-title">
-                  <h2>Biblioteca de fuentes y descargas</h2>
+                  <h2>Fuentes</h2>
                   <span className="muted">{sources.length} recursos</span>
                 </div>
                 {sources.map((source) => (
                   <div className="source-row" key={source.id}>
                     <div className="source-type">
-                      <BookOpen size={19} />
+                      <BookOpen size={18} />
                     </div>
                     <div>
-                      <span className="eyebrow">{source.kind}</span>
+                      <span className="source-kind">{source.kind}</span>
                       <h3>{source.title}</h3>
                       <p>{source.description}</p>
                     </div>
@@ -1179,67 +962,22 @@ function App() {
                 ))}
               </section>
               <section className="panel method-detail">
-                <h2>Descargas y procedencia</h2>
+                <h2>Informes técnicos</h2>
                 <div className="resource-downloads">
-                  <a
-                    className="button secondary"
-                    href="/resources/combustion-guide.pdf"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Guía de combustión · PDF <ArrowDownToLine size={15} />
-                  </a>
-                  <a
-                    className="button secondary"
-                    href="/resources/bass-ii-report.pdf"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Informe BASS-II · PDF <ArrowDownToLine size={15} />
-                  </a>
-                  <a
-                    className="button secondary"
-                    href="/resources/saffire-iv-model.pdf"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Modelado Saffire IV · PDF <ArrowDownToLine size={15} />
-                  </a>
+                  <SourceLink url="https://www.nasa.gov/wp-content/uploads/2016/05/np-2015-10-034-jsc_combustion_in_reduced_gravity-iss-mini-book-011116-508.pdf">Combustión en gravedad reducida · NASA</SourceLink>
+                  <SourceLink url="https://ntrs.nasa.gov/api/citations/20210011385/downloads/TM-20210011385.pdf">Informe BASS-II · NASA NTRS</SourceLink>
+                  <SourceLink url="https://ntrs.nasa.gov/api/citations/20220002714/downloads/Model%20Development%20of%20Large-Scale%20Spacecraft%20Fires%20during%20the%20Saffire-IV%20Experiments.pdf">Modelado de Saffire-IV · NASA NTRS</SourceLink>
                 </div>
-                <p>
-                  Tablas de PSI consultadas el 14 de noviembre de 2026. Las
-                  fichas descargadas declaran CC0-1.0. La clasificación por
-                  prevención, detección y supresión es editorial. Cada recurso
-                  conserva su atribución y condiciones de origen.
-                </p>
-                <p>
-                  Fotografía de la Tierra © NASA · ISS063-E-058598, 24 de julio
-                  de 2020.{" "}
-                  <SourceLink url="https://images.nasa.gov/details/iss063e058598">
-                    Crédito y original
-                  </SourceLink>
-                </p>
+                <p className="muted">Tablas consultadas el 14 de noviembre de 2026. La clasificación en prevención, detección y supresión es editorial. Fotografía de la Tierra: NASA ISS063-E-058598.</p>
               </section>
               <section className="panel method-detail">
-                <h2>Cómo interpretar la simulación</h2>
-                <p>
-                  El tiempo representa una ventana educativa de 180 segundos.
-                  Los incidentes históricos sirven como contexto. Los
-                  coeficientes de combustión, transporte y respuesta se definen
-                  para explorar relaciones y se documentan en el modelo.
-                </p>
-                <p>
-                  Temperatura en °C, presión en kPa, oxígeno en porcentaje
-                  volumétrico, ventilación en m/s y gravedad como fracción de g.
-                  El humo se representa mediante un índice relativo entre 0 y
-                  100. Las personas que alcanzan el refugio dependen de tiempos
-                  y umbrales ilustrativos.
-                </p>
-                <p>
-                  El comportamiento en gravedad lunar y marciana es
-                  exploratorio. Una conclusión de supervivencia solo describe
-                  las hipótesis y condiciones ejecutadas.
-                </p>
+                <h2>Cómo leer la simulación</h2>
+                <ul className="plain-list">
+                  <li>Cada caso dura 3 minutos de simulación. Apollo 13 está comprimido: en la misión real pasaron horas.</li>
+                  <li>El humo se mide de 0 a 100 según cuánto deja ver, no según su toxicidad.</li>
+                  <li>«A salvo» significa que la persona llegó al refugio con la ruta despejada. No es una garantía de supervivencia.</li>
+                  <li>La Luna y Marte son una extrapolación: hay pocos ensayos de fuego con gravedad parcial.</li>
+                </ul>
                 <button
                   className="button secondary"
                   onClick={() =>
@@ -1247,21 +985,10 @@ function App() {
                       "metodo-y-configuracion.json",
                       JSON.stringify(
                         {
-                          purpose:
-                            "Comparación educativa de escenarios; sin validación para ingeniería",
-                          units: {
-                            pressure: "kPa",
-                            oxygen: "% volumétrico",
-                            airflow: "m/s",
-                            gravity: "g",
-                            temperature: "°C",
-                            smoke: "índice relativo 0–100",
-                          },
+                          purpose: "Comparación educativa de escenarios; sin validación para ingeniería",
+                          units: { pressure: "kPa", oxygen: "% volumétrico", airflow: "m/s", gravity: "g", temperature: "°C", smoke: "índice de visibilidad 0–100" },
                           config,
-                          sourceFiles: [
-                            "src/lib/simulation.ts",
-                            "src/data/research.ts",
-                          ],
+                          sourceFiles: ["src/lib/simulation.ts", "src/data/research.ts"],
                         },
                         null,
                         2,
@@ -1269,7 +996,7 @@ function App() {
                     )
                   }
                 >
-                  <ArrowDownToLine size={15} /> Exportar condiciones y unidades
+                  <ArrowDownToLine size={15} /> Descargar supuestos y unidades
                 </button>
               </section>
             </>
@@ -1278,7 +1005,7 @@ function App() {
             <span>
               <Orbit size={14} /> ORBITAL FIRE LAB
             </span>
-            <span>Investigación abierta. Decisiones informadas.</span>
+            <span>NASA Space Apps Challenge</span>
             <button onClick={() => navigate("sources")}>
               Fuentes y alcance <ArrowRight size={13} />
             </button>

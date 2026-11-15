@@ -87,6 +87,10 @@ const starved = historical("aegis", { airflow: 0 });
 assert.ok(starved.events.some((event) => event.kind === "starved"), "Microgravity flame without airflow starves");
 assert.ok(!historical("aegis", { airflow: 0, gravity: 1 }).events.some((event) => event.kind === "starved"), "Buoyancy keeps a 1 g flame fed");
 assert.ok(!historical("mir", { airflow: 0 }).events.some((event) => event.kind === "starved"), "Mir's oxygen candle feeds itself");
+const mirFire = historical("mir", { suppression: true });
+assert.ok(mirFire.events.some((event) => event.kind === "burnout"), "Mir's candle burns out on its own");
+assert.ok(mirFire.frames[60].fireIntensity > 0.5, "Extinguishers do not stop Mir's candle");
+assert.ok(historical("apollo13").events[0].kind === "stir", "Apollo 13 starts with the cryo stir");
 for (const scenario of Object.keys(scenarioInfo)) {
   const run = historical(scenario);
   assert.ok(run.frames.every((frame) => frame.narrative.length > 10 && frame.crew.length === scenarioInfo[scenario].crew));

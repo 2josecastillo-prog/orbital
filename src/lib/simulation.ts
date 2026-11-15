@@ -68,7 +68,10 @@ export interface SimEvent {
     | "controlled"
     | "starved"
     | "rupture"
-    | "power";
+    | "power"
+    | "stir"
+    | "masks"
+    | "burnout";
   title: string;
   detail: string;
 }
@@ -117,12 +120,12 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
       "Un generador químico de oxígeno se incendió en el módulo Kvant-1. La llama, de casi un metro, bloqueó el paso a la Soyuz acoplada detrás. El humo llenó la estación.",
     crew: 6,
     interpretation:
-      "Ventana ilustrativa de 180 s. El fuego real duró varios minutos y se apagó al consumirse la vela. La evacuación es un ensayo alternativo, no la cronología histórica.",
+      "La vela arde unos 90 s, la cifra oficial; la tripulación habló de hasta 14 minutos. En 1997 nadie tuvo que evacuar: aquí se ensaya qué habría pasado.",
     sourceLabel: "NASA · Fire Aboard Space Station Mir",
     startModule: 1,
     modules: ["Kvant-1", "Módulo central", "Soyuz"],
     ignition:
-      "Una vela de oxígeno se enciende sola en Kvant-1 y lanza un chorro de llama con chispas de metal fundido.",
+      "Al encender una vela de oxígeno en Kvant-1, se incendia. Sale un chorro de llama de casi un metro con chispas de metal fundido.",
     protections: {
       isolation: {
         label: "Cerrar escotillas",
@@ -130,7 +133,7 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
       },
       suppression: {
         label: "Extintores y respiradores",
-        help: "La tripulación ataca el fuego con extintores mientras respira con máscaras.",
+        help: "Enfrían las paredes y frenan el humo. No apagan la vela: fabrica su propio oxígeno.",
       },
       backup: {
         label: "Segunda Soyuz disponible",
@@ -177,12 +180,12 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
       "El tanque de oxígeno 2 del módulo de servicio se rompió a 300 000 km de la Tierra. La nave perdió oxígeno y electricidad. La tripulación se refugió en el módulo lunar Aquarius.",
     crew: 3,
     interpretation:
-      "180 s que resumen horas de pérdida de recursos. La llama ocurrió dentro del módulo de servicio, sin tripulación. Los recursos se pierden más rápido que en la misión real para poder verlo.",
+      "Tiempo comprimido: en la misión, el paso al módulo lunar llevó más de dos horas y el viaje de vuelta, unas 90. El fuego ocurrió dentro del tanque, donde no había nadie.",
     sourceLabel: "NASA · Apollo 13 Accident Lessons Learned",
     startModule: 1,
     modules: ["Servicio", "Mando", "Módulo lunar"],
     ignition:
-      "El tanque de oxígeno 2 se rompe dentro del módulo de servicio. Arranca una de sus paredes y empieza la fuga.",
+      "El tanque de oxígeno 2 revienta. Arranca el panel 4 del módulo de servicio y daña el tanque 1. Dos de las tres pilas de combustible dejan de funcionar.",
     protections: {
       isolation: {
         label: "Aislar el tanque dañado",
@@ -194,7 +197,7 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
       },
       backup: {
         label: "Módulo lunar como refugio",
-        help: "Aquarius tenía su propio oxígeno, agua y baterías. Sin él no había a dónde ir.",
+        help: "Aquarius, hecho para 2 personas durante 45 h, mantuvo a 3 durante unas 90 h.",
       },
     },
     defaults: { oxygen: 100, pressure: 34.5, airflow: 0.1, gravity: 0 },
@@ -240,6 +243,7 @@ export const defaultConfig: SimConfig = {
 };
 
 export const IGNITION_TIME = 12;
+const CANDLE_SECONDS = 90;
 export const DURATION = 180;
 const AIR_PP_O2 = 21.3; // kPa of oxygen in sea-level air
 
@@ -313,7 +317,7 @@ export function runSimulation(config: SimConfig): {
   const flow = effectiveFlow(airflow, gravity);
   // Fire growth ramp: faster with more oxygen.
   const boost0 = oxygenBoost(oxygenInitial, pressureInitial);
-  const ramp = clamp(24 / Math.sqrt(Math.max(boost0, 0.25)), 6, 40);
+  const ramp = clamp(24 / Math.sqrt(Math.max(boost0, 0.25)), isGroundTest ? 5 : 6, 40) * (isGroundTest ? 0.55 : 1);
 
   const temperature = [22, 22, 22];
   const smoke = [0, 0, 0];
@@ -351,14 +355,20 @@ export function runSimulation(config: SimConfig): {
       flowFactor *= Math.max(0.05, flow / limit);
       starvedFor++;
     }
-    const suppressionFactor = suppressed
-      ? Math.exp(-(time - suppressTime) / (isConcept ? 8 : isGroundTest ? 6 : 13))
+    // Mir's candle carried its own oxidizer: extinguishers could not stop it.
+    // It burned until the charge was used up (~90 s, official figure).
+    const suppressionFactor =
+      suppressed && !isMir
+        ? Math.exp(-(time - suppressTime) / (isConcept ? 8 : isGroundTest ? 6 : 13))
+        : 1;
+    const burnout = isMir && time - IGNITION_TIME > CANDLE_SECONDS
+      ? Math.exp(-(time - IGNITION_TIME - CANDLE_SECONDS) / 4)
       : 1;
     // Fire-resistant materials (Apollo 1 suppression) slow growth from the start.
     const materials = isGroundTest && config.suppression ? 0.35 : 1;
     const starvation = starvedFor > 10 ? Math.exp(-(starvedFor - 10) / 12) : 1;
     const source =
-      growth * sourceOxygen * flowFactor * suppressionFactor * materials * starvation;
+      growth * sourceOxygen * flowFactor * suppressionFactor * materials * starvation * burnout;
 
     const previousSmoke = [...smoke];
     const previousTemperature = [...temperature];
@@ -379,7 +389,10 @@ export function runSimulation(config: SimConfig): {
       }
       const protectedRefuge =
         module === 2 && (config.backup || (isConcept && isolated));
-      const emission = module === 0 ? source * (isTankFailure ? 0.4 : isMir ? 3.4 : 1.9) : 0;
+      const emission =
+        module === 0
+          ? source * (isTankFailure ? 0.4 : isMir ? (suppressed ? 2.4 : 3.4) : 1.9)
+          : 0;
       const removal = protectedRefuge ? 0.1 : suppressed ? 0.035 : 0.002;
       smoke[module] = clamp(
         previousSmoke[module] + emission + smokeTransfer - previousSmoke[module] * removal,
@@ -438,6 +451,12 @@ export function runSimulation(config: SimConfig): {
     }
 
     // ---- events
+    if (isTankFailure && time === 3)
+      push(time, "stir", "Agitan los tanques", "Control de misión pide encender los ventiladores de los tanques de oxígeno. Dentro del tanque 2, un cable con el aislante dañado hace chispa.");
+    if (isMir && time === detectionTime + 6)
+      push(time, "masks", "Respiradores puestos", "La tripulación se pone máscaras de oxígeno. El humo ya llega al bloque base.");
+    if (isMir && burnout < 0.2)
+      push(time, "burnout", "La vela se consume", "Se agota la carga de la vela y la llama se apaga sola.");
     if (time === IGNITION_TIME) push(time, "ignition", isTankFailure ? "Explota el tanque" : "Empieza el fuego", info.ignition);
     if (time === detectionTime)
       push(time, "detection", "Alarma", isConcept
@@ -459,7 +478,7 @@ export function runSimulation(config: SimConfig): {
     if (refuge === info.crew) push(time, "all-safe", "Toda la tripulación a salvo", `Las ${info.crew} personas están en ${info.modules[2]}.`);
     if (starvedFor === 12)
       push(time, "starved", "La llama se ahoga", "Sin gravedad no hay corriente de aire caliente que suba. Con la ventilación tan baja, la llama no recibe oxígeno y se apaga sola.");
-    if (active && !isTankFailure && time > IGNITION_TIME + 5 && source < 0.04 && (suppressed || starvedFor > 12 || ruptured))
+    if (active && !isTankFailure && !isMir && time > IGNITION_TIME + 5 && source < 0.04 && (suppressed || starvedFor > 12 || ruptured))
       push(time, "controlled", "Fuego apagado", ruptured
         ? "Al entrar aire normal, el oxígeno baja y el fuego se agota."
         : "Ya no hay llama. Queda el humo, que tarda más en limpiarse.");
@@ -493,6 +512,8 @@ export function runSimulation(config: SimConfig): {
     // ---- crew positions
     const crewPositions = Array.from({ length: info.crew }, (_, index) => {
       if (index < refuge) return 2;
+      if (isMir && index === info.crew - 1 && time < IGNITION_TIME + 10)
+        return time <= IGNITION_TIME ? 0.15 : 0.15 + 0.85 * ((time - IGNITION_TIME) / 10);
       if (evacuating && routeClear && index === refuge) {
         const progress = ((time - evacuationStart) % transit) / transit;
         return info.startModule + (2 - info.startModule) * progress;
@@ -564,7 +585,7 @@ function summarize(config: SimConfig, frames: SimFrame[], events: SimEvent[]): S
   const factors: SimOutcome["factors"] = [];
 
   if (config.scenario === "mir")
-    factors.push({ good: false, text: "La vela fabricaba su propio oxígeno: cerrar el aire no la apagaba." });
+    factors.push({ good: false, text: "La vela fabricaba su propio oxígeno: ni los extintores ni cortar el aire la apagaban. Solo se apagó al consumirse." });
   else if (boost >= 1.6)
     factors.push({ good: false, text: `El fuego tenía ${boost.toFixed(1).replace(".", ",")} veces más oxígeno que en el aire normal. Por eso creció tan rápido.` });
   else if (boost <= 0.8)
@@ -580,7 +601,13 @@ function summarize(config: SimConfig, frames: SimFrame[], events: SimEvent[]): S
   else if (config.scenario !== "apollo13" && config.scenario !== "apollo1")
     factors.push({ good: false, text: `Sin «${info.protections.isolation.label.toLowerCase()}», el humo pasó libremente entre módulos.` });
   if (config.suppression)
-    factors.push({ good: true, text: `${info.protections.suppression.label} redujo el fuego.` });
+    factors.push({
+      good: true,
+      text:
+        config.scenario === "mir"
+          ? "Los extintores enfriaron el módulo y frenaron el humo, aunque la vela siguió ardiendo."
+          : `${info.protections.suppression.label} redujo el fuego.`,
+    });
   else factors.push({ good: false, text: "Nada frenó el fuego: siguió hasta agotar lo que podía quemar." });
   if (config.backup)
     factors.push({ good: true, text: `${info.protections.backup.label}: había a dónde ir.` });

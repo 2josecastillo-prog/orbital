@@ -3679,3 +3679,408 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+/* Larger 3D stage */
+.simulation-layout {
+  grid-template-columns: minmax(0, 1fr) 330px !important;
+}
+.scene {
+  min-height: clamp(560px, 72vh, 900px) !important;
+}
+.viewport-panel:fullscreen {
+  display: flex;
+  flex-direction: column;
+  background: #070c11;
+}
+.viewport-panel:fullscreen .scene {
+  flex: 1;
+  min-height: 0 !important;
+}
+.camera-modes {
+  display: flex;
+  border: 1px solid #31414d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.camera-modes button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #9eb0bd;
+}
+.camera-modes button + button {
+  border-left: 1px solid #31414d;
+}
+.camera-modes button[aria-pressed="true"] {
+  background: #293c21;
+  color: var(--lime);
+}
+@media (max-width: 1250px) {
+  .simulation-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 700px) {
+  .scene {
+    min-height: 460px !important;
+  }
+  .camera-modes button {
+    padding: 6px 7px;
+    font-size: 11px;
+  }
+}
+
+/* ===================================================== v3: order and readability
+   One type scale for the whole app: 15 px body, 13 px secondary, nothing under 12 px. */
+.topbar {
+  height: 60px;
+  background: #0d141c;
+}
+.breadcrumb {
+  font-size: 13px;
+}
+.brand {
+  margin-bottom: 30px;
+}
+.nav-group {
+  display: block;
+  margin: 18px 13px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6f8090;
+}
+.nav-entry:first-child .nav-group {
+  margin-top: 0;
+}
+.sidebar nav {
+  gap: 2px;
+}
+.nav-item {
+  height: 40px;
+  font-size: 14px;
+  width: 100%;
+}
+.sidebar-bottom p {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #7f8f9b;
+  margin: 0;
+}
+.sidebar-bottom button {
+  margin-top: 14px;
+  padding-top: 14px;
+  font-size: 13px;
+  width: 100%;
+}
+.page-heading h1 {
+  font-size: 30px;
+  margin-bottom: 6px;
+}
+.page-heading p {
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 70ch;
+}
+/* Hero */
+.hero {
+  height: auto;
+  min-height: 380px;
+  display: flex;
+  align-items: center;
+}
+.hero-content {
+  max-width: 640px;
+  padding: 44px 46px;
+}
+.hero-content h1 {
+  font-size: clamp(30px, 3.4vw, 44px);
+  letter-spacing: -1.4px;
+  line-height: 1.1;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+.hero-content p {
+  max-width: 52ch;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #c3d0d7;
+  margin-bottom: 26px;
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hero-content .button {
+  font-size: 14px;
+  padding: 11px 18px;
+}
+.button.ghost {
+  border: 1px solid #5b6d78;
+  color: #e4ecef;
+  background: #0d161ccc;
+}
+.button.ghost:hover {
+  border-color: #8aa0ad;
+}
+/* Facts */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 22px;
+}
+.facts article {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0f1820;
+}
+.facts strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 30px;
+  font-weight: 500;
+  color: var(--peach);
+}
+.facts p {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b5c3cb;
+}
+.facts .text-button {
+  font-size: 13.5px;
+  align-self: flex-start;
+}
+.start-here > h2,
+.glossary-block > h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.start-steps {
+  margin: 0;
+}
+.glossary-block {
+  margin: 0 0 30px;
+  padding: 24px 26px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.glossary {
+  border-top: 0;
+  padding-top: 0;
+}
+.glossary dd {
+  font-size: 14px;
+}
+/* Research, compare, sources: readable sizes */
+.investigation-card > p,
+.compare-table td,
+.compare-table th,
+.source-row p,
+.method-grid p,
+.method-detail p,
+.research-row small {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.card-metadata span {
+  font-family: "DM Sans", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: #7f94a2;
+}
+.card-metadata strong {
+  font-size: 13px;
+}
+.source-kind {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8fb878;
+  margin-bottom: 2px;
+}
+.resource-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin-bottom: 14px;
+}
+.plain-list {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #b5c3cb;
+}
+.source-link {
+  font-size: 13.5px;
+}
+/* History */
+.history-card {
+  display: block;
+  padding: 26px 28px;
+}
+.history-head {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.history-year {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 28px;
+  color: var(--peach);
+  line-height: 1.1;
+}
+.history-head h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 600;
+}
+.history-meta {
+  margin: 0;
+  font-size: 13.5px;
+  color: #93a4b0;
+}
+.history-summary {
+  margin: 16px 0 18px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #c3d0d7;
+  max-width: 85ch;
+}
+.history-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+.history-grid h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: #dbe5e0;
+}
+.history-timeline,
+.history-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.history-timeline li {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #1f2c36;
+  font-size: 14px;
+  color: #b5c3cb;
+}
+.history-timeline time {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  color: #8fb878;
+  padding-top: 2px;
+}
+.history-changes li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 7px 0;
+  font-size: 14px;
+  color: #b5c3cb;
+}
+.history-changes svg {
+  color: var(--lime);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.lesson p {
+  margin: 0;
+  font-size: 14.5px;
+  color: #d4e3d0;
+}
+.lesson {
+  align-items: center;
+}
+.history-actions {
+  justify-content: flex-start;
+}
+.concept-banner p {
+  font-size: 14px;
+}
+@media (max-width: 950px) {
+  .facts,
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero-content {
+    padding: 30px 24px;
+  }
+}
+.button {
+  font-size: 13.5px;
+}
+.tag {
+  font-size: 12px;
+}
+.filter-tabs button,
+.results-bar,
+.results-bar .text-button,
+.search-field input {
+  font-size: 14px;
+}
+.card-title-button span {
+  font-size: 13px;
+}
+.text-button {
+  font-size: 13.5px;
+}
+.page-footer,
+.page-footer button {
+  font-size: 12.5px;
+}
+.compare-check {
+  gap: 6px;
+}
+.prompt-grid button {
+  font-size: 14px;
+}
+.setup-note strong {
+  font-size: 14px;
+}
+.setup-note p,
+.question-form span {
+  font-size: 13px;
+}
+.question-form textarea {
+  font-size: 15px;
+}
+.empty-state p {
+  font-size: 14px;
+}
+@media (max-width: 700px) {
+  .viewport-toolbar {
+    height: auto !important;
+    flex-wrap: wrap;
+    padding: 10px 12px !important;
+    row-gap: 8px;
+  }
+  .viewport-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+.data-controls label,
+.dataset-description p {
+  font-size: 13.5px;
+}
+.dataset-description h3 {
+  font-size: 17px;
+}

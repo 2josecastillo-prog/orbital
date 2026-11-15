@@ -194,7 +194,6 @@ export default function ExperimentalExplorer() {
       </section>
       <section className="panel dataset-header">
         <div>
-          <span className="eyebrow">TABLAS ORIGINALES · NASA PSI</span>
           <label className="select-label">
             Investigación
             <select
@@ -272,7 +271,6 @@ export default function ExperimentalExplorer() {
             <section className="panel experimental-chart">
               <div className="section-title">
                 <div>
-                  <span className="eyebrow">EXPLORACIÓN DE MEDICIONES</span>
                   <h2>{name}</h2>
                 </div>
                 <span className="tag lime">

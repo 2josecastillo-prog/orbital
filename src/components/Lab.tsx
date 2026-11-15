@@ -1,6 +1,11 @@
-import { Component, Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
+  Flame as FlameIcon,
+  Maximize2,
+  Minimize2,
+  Users,
+  Scan,
   Check,
   CircleHelp,
   Layers3,
@@ -41,6 +46,7 @@ import {
 } from "../lib/simulation";
 
 const Spacecraft = lazy(() => import("./Spacecraft"));
+type CameraFocus = "general" | "fire" | "crew";
 const cx = (...values: (string | false | undefined)[]) => values.filter(Boolean).join(" ");
 const clock = (seconds: number) =>
   `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -80,7 +86,7 @@ export function historicalConfig(scenario: ScenarioId): SimConfig {
     ...scenarioInfo[scenario].defaults,
     isolation: scenario === "aegis",
     suppression: scenario === "mir" || scenario === "aegis",
-    backup: scenario === "aegis" || scenario === "apollo13",
+    backup: scenario !== "apollo1",
   };
 }
 
@@ -102,6 +108,22 @@ export default function Lab({
   const [cutaway, setCutaway] = useState(true);
   const [cameraReset, setCameraReset] = useState(0);
   const [jumpEnd, setJumpEnd] = useState(false);
+  const [focus, setFocus] = useState<CameraFocus>("general");
+  const [fullscreen, setFullscreen] = useState(false);
+  const viewport = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === viewport.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void viewport.current?.requestFullscreen?.();
+  };
+  const chooseFocus = (next: CameraFocus) => {
+    setFocus(next);
+    if (next !== "general") setCutaway(true);
+  };
   const [guide, setGuide] = useState(() => {
     try {
       return localStorage.getItem("orbital-guide") !== "hidden";
@@ -218,7 +240,10 @@ export default function Lab({
             role="tab"
             aria-selected={config.scenario === id}
             className={cx("case-card", config.scenario === id && "selected", id === "aegis" && "concept")}
-            onClick={() => onConfig(historicalConfig(id))}
+            onClick={() => {
+              setFocus("general");
+              onConfig(historicalConfig(id));
+            }}
           >
             <span className="case-year">{scenarioInfo[id].year}</span>
             <strong>{scenarioInfo[id].title}</strong>
@@ -245,7 +270,7 @@ export default function Lab({
       )}
 
       <div className="simulation-layout">
-        <section className="viewport-panel">
+        <section className="viewport-panel" ref={viewport}>
           <div className="viewport-toolbar">
             <div>
               <i className={running ? "live-dot" : "paused-dot"} />
@@ -253,13 +278,32 @@ export default function Lab({
               <span>{config.gravity === 0 ? "Microgravedad" : config.gravity === 1 ? "Gravedad terrestre" : `${decimal(config.gravity, 2)} g`}</span>
             </div>
             <div className="viewport-actions">
+              <div className="camera-modes" role="group" aria-label="Cámara">
+                {(
+                  [
+                    ["general", "General", Scan],
+                    ["fire", "Fuego", FlameIcon],
+                    ["crew", "Tripulación", Users],
+                  ] as const
+                ).map(([id, label, Icon]) => (
+                  <button key={id} aria-pressed={focus === id} onClick={() => chooseFocus(id)}>
+                    <Icon size={13} /> {label}
+                  </button>
+                ))}
+              </div>
               <button
                 className="icon-button"
                 aria-label="Restablecer vista 3D"
                 title="Restablecer vista 3D"
-                onClick={() => setCameraReset((value) => value + 1)}
+                onClick={() => {
+                  setFocus("general");
+                  setCameraReset((value) => value + 1);
+                }}
               >
                 <RotateCcw size={15} />
+              </button>
+              <button className="icon-button" aria-label={fullscreen ? "Salir de pantalla completa" : "Pantalla completa"} title="Pantalla completa" onClick={toggleFullscreen}>
+                {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
               <button
                 className={cx("small-button", cutaway && "selected")}
@@ -280,7 +324,7 @@ export default function Lab({
                   </div>
                 }
               >
-                <Spacecraft key={cameraReset} scenario={config.scenario} frame={frame} cutaway={cutaway} config={config} />
+                <Spacecraft key={cameraReset} scenario={config.scenario} frame={frame} cutaway={cutaway} config={config} focus={focus} />
               </Suspense>
             </SceneBoundary>
             <div className="scene-label">

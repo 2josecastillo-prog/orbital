@@ -1,19 +1,19 @@
-import { Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Suspense, createContext, useContext, useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from "react";
+
+const LabelsVisible = createContext(true);
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import {
-  ContactShadows,
-  Environment,
-  Lightformer,
-  OrbitControls,
-  Stars,
-} from "@react-three/drei";
+import { Environment, Lightformer, OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import {
+  IGNITION_TIME,
+  oxygenBoost,
   scenarioInfo,
   type ScenarioId,
   type SimConfig,
   type SimFrame,
 } from "../lib/simulation";
+import { Earth, Flame, Moon, Smoke, Sparks, Vent, type Vec3 } from "./three/effects";
+import Person, { type Outfit, type Pose } from "./three/Person";
 
 /*
  * Reconstrucciones a escala a partir de dimensiones publicadas (metros):
@@ -21,16 +21,20 @@ import {
  *   Kristall 11,9 m; Spektr 14,4 m; Priroda 11,6 m; Soyuz TM 7,0 m.
  * - Apollo: módulo de mando Ø 3,9 m × 3,2 m; módulo de servicio Ø 3,9 m × 7,5 m
  *   con tobera; módulo lunar 4,2 m de ancho (etapa de descenso) y 7 m de alto.
+ * - Tripulación: figuras articuladas de 1,75 m.
  * La disposición interior es esquemática.
  */
 
-type Vec3 = [number, number, number];
+export type CameraFocus = "general" | "fire" | "crew";
+type Markers = MutableRefObject<{ fire?: THREE.Object3D | null; crew?: THREE.Object3D | null }>;
 type Props = {
   scenario: ScenarioId;
   frame: SimFrame;
   cutaway: boolean;
   config: SimConfig;
+  focus?: CameraFocus;
 };
+type VehicleProps = Props & { markers: Markers };
 
 const textureCache = new Map<string, THREE.Texture>();
 function canvasTexture(key: string, draw: (c: CanvasRenderingContext2D, size: number) => void, size = 128) {
@@ -238,225 +242,6 @@ function Lattice({ length, width = 0.5 }: { length: number; width?: number }) {
   );
 }
 
-/* --------------------------------------------------------------- effects */
-
-type FireMode = "jet" | "micro" | "buoyant" | "vent";
-
-function Fire({
-  position,
-  intensity,
-  mode,
-  direction = [1, 0, 0],
-  flow = 0,
-}: {
-  position: Vec3;
-  intensity: number;
-  mode: FireMode;
-  direction?: Vec3;
-  flow?: number;
-}) {
-  const group = useRef<THREE.Group>(null);
-  const light = useRef<THREE.PointLight>(null);
-  const sparks = useRef<THREE.Points>(null);
-  const dot = softDot();
-  const dir = useMemo(() => new THREE.Vector3(...direction).normalize(), [direction]);
-  const sparkData = useMemo(() => {
-    const count = 70;
-    const positions = new Float32Array(count * 3);
-    const seeds = Array.from({ length: count }, (_, i) => ({
-      phase: (i * 0.618) % 1,
-      spread: new THREE.Vector3(Math.sin(i * 12.9), Math.cos(i * 4.1), Math.sin(i * 7.7)).multiplyScalar(0.35),
-    }));
-    return { positions, seeds };
-  }, []);
-  const strength = Math.min(intensity, 1.5);
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime;
-    if (group.current) {
-      const flicker = 1 + Math.sin(t * 13) * 0.06 + Math.sin(t * 7.3) * 0.05;
-      group.current.scale.setScalar(Math.max(0.05, strength) * flicker);
-    }
-    if (light.current) light.current.intensity = 6 * strength * (0.85 + Math.sin(t * 17) * 0.15);
-    if (sparks.current && (mode === "jet" || mode === "vent")) {
-      const { positions, seeds } = sparkData;
-      const reach = mode === "vent" ? 3.2 : 1.6;
-      seeds.forEach((seed, i) => {
-        const life = (t * (mode === "vent" ? 0.55 : 0.9) + seed.phase) % 1;
-        const along = dir.clone().multiplyScalar(life * reach);
-        const spread = seed.spread.clone().multiplyScalar(life * (mode === "vent" ? 2.2 : 1));
-        positions[i * 3] = along.x + spread.x;
-        positions[i * 3 + 1] = along.y + spread.y - (mode === "jet" ? 0 : 0);
-        positions[i * 3 + 2] = along.z + spread.z;
-      });
-      sparks.current.geometry.attributes.position.needsUpdate = true;
-      (sparks.current.material as THREE.PointsMaterial).opacity = Math.min(1, strength * 1.2);
-    }
-  });
-  if (intensity < 0.03) return null;
-
-  // Flame "puffs" laid out according to the regime.
-  const puffs: { p: Vec3; s: number; color: string; o: number }[] = [];
-  if (mode === "buoyant") {
-    // Normal gravity: hot gas rises, flame becomes a tall flickering teardrop.
-    for (let i = 0; i < 6; i++)
-      puffs.push({ p: [0, i * 0.17, 0], s: 0.55 - i * 0.07, color: i < 2 ? "#ffe39a" : "#ff8a2a", o: 0.75 - i * 0.08 });
-    puffs.push({ p: [0, -0.04, 0], s: 0.26, color: "#6aa8ff", o: 0.5 });
-  } else if (mode === "micro") {
-    // Microgravity: no buoyancy, a dim round flame, bluish because there is less soot.
-    // Air flow stretches it downstream.
-    const stretch = Math.min(flow / 0.2, 1);
-    puffs.push({ p: [0, 0, 0], s: 0.62, color: "#3d7dff", o: 0.5 });
-    puffs.push({ p: [stretch * 0.25, 0, 0], s: 0.42, color: "#ffb15a", o: 0.38 });
-    puffs.push({ p: [stretch * 0.5, 0, 0], s: 0.3 + stretch * 0.1, color: "#ff8a2a", o: 0.25 * stretch });
-  } else if (mode === "jet") {
-    // Mir's oxygen candle: a torch-like jet with molten sparks.
-    for (let i = 0; i < 6; i++) {
-      const d = dir.clone().multiplyScalar(i * 0.22);
-      puffs.push({ p: [d.x, d.y, d.z], s: 0.24 + i * 0.05, color: i < 2 ? "#fff2c4" : "#ff9a3a", o: 0.85 - i * 0.1 });
-    }
-  } else {
-    puffs.push({ p: [0, 0, 0], s: 0.5, color: "#ffd9a8", o: 0.6 });
-  }
-
-  return (
-    <group position={position}>
-      <pointLight ref={light} color={mode === "micro" ? "#8fb4ff" : "#ff8a3d"} distance={6} decay={2} />
-      <group ref={group}>
-        <sprite scale={[2.2, 2.2, 1]}>
-          <spriteMaterial map={dot} color={mode === "micro" ? "#335cff" : "#ff6a1a"} transparent opacity={0.28} depthWrite={false} blending={THREE.AdditiveBlending} />
-        </sprite>
-        {puffs.map((puff, index) => (
-          <sprite key={index} position={puff.p} scale={[puff.s, puff.s * (mode === "buoyant" ? 1.4 : 1), 1]}>
-            <spriteMaterial map={dot} color={puff.color} transparent opacity={puff.o} depthWrite={false} blending={THREE.AdditiveBlending} />
-          </sprite>
-        ))}
-      </group>
-      {(mode === "jet" || mode === "vent") && (
-        <points ref={sparks}>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[sparkData.positions, 3]} />
-          </bufferGeometry>
-          <pointsMaterial
-            map={dot}
-            opacity={0.8}
-            size={mode === "vent" ? 0.28 : 0.09}
-            color={mode === "vent" ? "#e8f3ff" : "#ffc266"}
-            transparent
-            depthWrite={false}
-            blending={mode === "vent" ? THREE.NormalBlending : THREE.AdditiveBlending}
-          />
-        </points>
-      )}
-    </group>
-  );
-}
-
-/** Drifting smoke inside a cylindrical compartment along X. */
-function Smoke({
-  amount,
-  center,
-  length,
-  radius,
-  tint = "#8b8e8f",
-}: {
-  amount: number;
-  center: Vec3;
-  length: number;
-  radius: number;
-  tint?: string;
-}) {
-  const ref = useRef<THREE.Points>(null);
-  const dot = softDot();
-  const data = useMemo(() => {
-    const count = 140;
-    const base = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const a = i * 2.39996;
-      const rr = Math.sqrt(((i * 0.618) % 1)) * radius * 0.85;
-      base[i * 3] = (((i * 0.37) % 1) - 0.5) * length * 0.92;
-      base[i * 3 + 1] = Math.sin(a) * rr;
-      base[i * 3 + 2] = Math.cos(a) * rr;
-    }
-    return { base, live: new Float32Array(base) };
-  }, [length, radius]);
-  useFrame(({ clock }) => {
-    if (!ref.current) return;
-    const t = clock.elapsedTime * 0.25;
-    const { base, live } = data;
-    for (let i = 0; i < base.length; i += 3) {
-      live[i] = base[i] + Math.sin(t + i) * 0.12;
-      live[i + 1] = base[i + 1] + Math.sin(t * 1.3 + i * 0.7) * 0.1;
-      live[i + 2] = base[i + 2] + Math.cos(t * 0.9 + i * 0.3) * 0.1;
-    }
-    ref.current.geometry.attributes.position.needsUpdate = true;
-  });
-  if (amount < 1) return null;
-  return (
-    <points ref={ref} position={center}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[data.live, 3]} />
-      </bufferGeometry>
-      <pointsMaterial
-        map={dot}
-        size={radius * 1.3}
-        color={tint}
-        transparent
-        opacity={Math.min(0.08 + (amount / 100) * 0.55, 0.62)}
-        depthWrite={false}
-      />
-    </points>
-  );
-}
-
-/** Simple crew figure. Floats tilted in microgravity, stands or sits in 1 g. */
-function Astronaut({
-  position,
-  safe,
-  pose,
-  index,
-  scale = 1,
-}: {
-  position: Vec3;
-  safe: boolean;
-  pose: "float" | "seated" | "stand";
-  index: number;
-  scale?: number;
-}) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
-    if (ref.current && pose === "float") {
-      ref.current.rotation.z = 0.35 + Math.sin(clock.elapsedTime * 0.6 + index) * 0.12;
-      ref.current.position.y = position[1] + Math.sin(clock.elapsedTime * 0.8 + index * 1.7) * 0.04;
-    }
-  });
-  const suit = safe ? "#c6ed9c" : "#eef0ea";
-  const legs: Vec3 = pose === "seated" ? [0.42, -0.28, 0] : [0, -0.45, 0];
-  return (
-    <group ref={ref} position={position} scale={scale} rotation={pose === "seated" ? [0, 0, -0.9] : [0, index * 0.8, 0]}>
-      <mesh castShadow>
-        <capsuleGeometry args={[0.13, 0.32, 4, 10]} />
-        <meshStandardMaterial color={suit} roughness={0.7} />
-      </mesh>
-      <mesh position={[0, 0.34, 0]}>
-        <sphereGeometry args={[0.11, 14, 12]} />
-        <meshStandardMaterial color="#e3c7a8" roughness={0.6} />
-      </mesh>
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[legs[0], legs[1], side * 0.07]} rotation={[0, 0, pose === "seated" ? Math.PI / 2 : 0]}>
-          <capsuleGeometry args={[0.05, 0.36, 4, 8]} />
-          <meshStandardMaterial color={suit} roughness={0.7} />
-        </mesh>
-      ))}
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[0.02, 0.06, side * 0.17]} rotation={[side * 0.25, 0, 0.2]}>
-          <capsuleGeometry args={[0.04, 0.26, 4, 8]} />
-          <meshStandardMaterial color={suit} roughness={0.7} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 const levelColor: Record<string, string> = { ok: "#c6ed9c", watch: "#f0c674", danger: "#f08a6c" };
 /** Canvas-sprite label: always faces the camera and stays readable. */
 function Label({
@@ -502,6 +287,8 @@ function Label({
     return map;
   }, [name, detail, level]);
   useEffect(() => () => texture.dispose(), [texture]);
+  const visible = useContext(LabelsVisible);
+  if (!visible) return null;
   return (
     <sprite position={position} scale={[1.6 * k, 0.4 * k, 1]} center={new THREE.Vector2(0.5, 0)} renderOrder={10}>
       <spriteMaterial map={texture} transparent depthTest={false} />
@@ -509,7 +296,7 @@ function Label({
   );
 }
 
-/** Interpolates a crew position (0..2) along three interior anchor points. */
+/** Interpolates a position (0..2) along three anchor points. */
 function along(anchors: Vec3[], value: number): Vec3 {
   const i = Math.min(Math.floor(value), anchors.length - 2);
   const t = value - i;
@@ -518,40 +305,98 @@ function along(anchors: Vec3[], value: number): Vec3 {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
+/**
+ * Places each crew member from the simulation: idle people spread inside their
+ * module, moving people travel along the anchor path facing where they go.
+ */
 function Crew({
   frame,
-  anchors,
-  pose,
-  spread = 0.45,
-  scale = 1,
+  path,
+  outfit,
+  gravity,
+  floor,
+  seats,
+  spacing = 0.9,
+  markers,
 }: {
   frame: SimFrame;
-  anchors: Vec3[];
-  pose: "float" | "seated" | "stand";
-  spread?: number;
-  scale?: number;
+  path: Vec3[];
+  outfit: Outfit;
+  gravity: number;
+  floor?: number;
+  seats?: Vec3[];
+  spacing?: number;
+  markers: Markers;
 }) {
+  const grounded = gravity >= 0.1;
+  const byModule: Record<number, number[]> = {};
+  frame.crew.forEach((value, index) => {
+    if (Number.isInteger(value)) (byModule[value] ??= []).push(index);
+  });
+  const followIndex = Math.max(
+    0,
+    frame.crew.findIndex((value) => !Number.isInteger(value)) >= 0
+      ? frame.crew.findIndex((value) => !Number.isInteger(value))
+      : frame.crew.findIndex((value) => value < 2),
+  );
   return (
     <>
       {frame.crew.map((value, index) => {
-        const base = along(anchors, value);
-        const offset = (index - (frame.crew.length - 1) / 2) * spread;
+        const moving = !Number.isInteger(value) || (value > 0 && value < 2 && !Number.isInteger(value));
+        let target: Vec3;
+        let heading = (index * 1.9) % (Math.PI * 2);
+        let pose: Pose;
+        if (seats && value === 0) {
+          target = seats[index];
+          heading = 0;
+          pose = "supine";
+        } else if (moving) {
+          target = along(path, value);
+          const ahead = along(path, Math.min(2, value + 0.05));
+          heading = Math.atan2(ahead[0] - target[0], ahead[2] - target[2]);
+          pose = grounded ? "walk" : "translate";
+        } else {
+          const group = byModule[value] ?? [index];
+          const slot = group.indexOf(index);
+          const offset = (slot - (group.length - 1) / 2) * spacing;
+          const base = path[Math.round(value)];
+          target = [base[0] + offset, base[1] + (grounded ? 0 : ((slot % 2) - 0.5) * 0.35), base[2] + (slot % 2 ? 0.35 : -0.35)];
+          pose = grounded ? "stand" : "neutral";
+        }
+        if (grounded && floor !== undefined && pose !== "supine") target = [target[0], floor + 0.98, target[2]];
+        const module = frame.modules[Math.min(2, Math.round(value))];
+        const status = value >= 2 ? "safe" : module.level === "danger" ? "danger" : "ok";
         return (
-          <Astronaut
-            key={index}
-            index={index}
-            pose={pose}
-            safe={value >= 2}
-            scale={scale}
-            position={[base[0] + (value % 1 ? 0 : offset * 0.8), base[1], base[2] + (value % 1 ? 0 : offset * 0.35)]}
-          />
+          <group key={index}>
+            <Person target={target} heading={heading} pose={pose} outfit={outfit} seed={index} status={status} />
+            {index === followIndex && (
+              <group
+                position={target}
+                ref={(node) => {
+                  markers.current.crew = node;
+                }}
+              />
+            )}
+          </group>
         );
       })}
     </>
   );
 }
 
-/* --------------------------------------------------------------- vehicles */
+function Marker({ name, position, markers }: { name: "fire"; position: Vec3; markers: Markers }) {
+  return (
+    <group
+      position={position}
+      ref={(node) => {
+        markers.current[name] = node;
+      }}
+    />
+  );
+}
+
+/** Oxygen-dependent soot: more oxygen, brighter and yellower flames. */
+const sootFor = (config: SimConfig) => Math.min(1, 0.15 + 0.22 * oxygenBoost(config.oxygen, config.pressure));
 
 function Soyuz({ ghost = false, blocked = false }: { ghost?: boolean; blocked?: boolean }) {
   // Docking end at x = 0, extends toward −X. Orbital module · descent module · service module.
@@ -616,113 +461,6 @@ function RadialModule({
           </group>
         );
       })}
-    </group>
-  );
-}
-
-function Mir({ frame, cutaway, config }: Props) {
-  // 1 unit = 1 m; the group is scaled to fit. Core runs along +X from x = 0.
-  const white = blanket("#dcdcd2");
-  const ghost = cutaway;
-  const coreFloor: Vec3 = [4.5, -0.6, 0];
-  const anchors: Vec3[] = [
-    [-2.9, -0.4, 0], // Kvant-1
-    [4.2, -0.4, 0], // Core
-    [16.2, 0, 0], // forward Soyuz
-  ];
-  const [kvant, core, soyuz] = frame.modules;
-  return (
-    <group scale={0.2} position={[-0.5, 0.2, 0.5]} rotation={[0, 0.67, 0]}>
-      {/* Base block */}
-      <Hull from={0} to={6.4} r1={2.07} map={white} ghost={ghost} />
-      <Hull from={6.4} to={7.6} r1={2.07} r2={1.45} map={white} ghost={ghost} />
-      <Hull from={7.6} to={11.6} r1={1.45} map={white} ghost={ghost} />
-      <RingFrame x={0} r={2.07} />
-      <RingFrame x={6.4} r={2.07} />
-      {/* Docking node with five ports */}
-      <mesh position={[12.7, 0, 0]} castShadow>
-        <sphereGeometry args={[1.1, 32, 24]} />
-        <meshStandardMaterial color="#cfd1ca" metalness={0.3} roughness={0.6} transparent={ghost} opacity={ghost ? 0.3 : 1} />
-      </mesh>
-      {/* Core solar arrays */}
-      {[-1, 1].map((side) => (
-        <group key={side} position={[3.5, 1.2, side * 2.07]} rotation={[0, side > 0 ? 0 : Math.PI, 0]}>
-          <SolarWing length={11.5} width={3.4} tint="#2a2f6a" segments={8} />
-        </group>
-      ))}
-      <group position={[9.5, 1.5, 0]}>
-        <Dish radius={0.55} />
-      </group>
-      {/* Kvant-1 */}
-      <Hull from={-5.8} to={0} r1={2.07} map={white} ghost={ghost} />
-      <RingFrame x={-5.8} r={2.07} />
-      {/* Sofora truss on Kvant-1 */}
-      <group position={[-3, 2.07, 0]}>
-        <Lattice length={14} width={0.7} />
-        <mesh position={[0, 14.4, 0]}>
-          <boxGeometry args={[1.1, 0.9, 1.1]} />
-          <meshStandardMaterial color="#c8c9c2" map={white} />
-        </mesh>
-      </group>
-      {/* Soyuz behind Kvant-1: the one blocked by the fire in 1997 */}
-      <group position={[-5.8, 0, 0]}>
-        <Soyuz blocked={frame.fireIntensity > 0.1} />
-      </group>
-      {/* Forward Soyuz on the node: the available escape vehicle */}
-      <group position={[13.8, 0, 0]} rotation={[0, Math.PI, 0]}>
-        <Soyuz ghost={ghost} />
-      </group>
-      {/* Radial modules: Kvant-2 (up), Kristall (down), Spektr (+Z), Priroda (−Z) */}
-      <group position={[12.7, 1.1, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <RadialModule length={12.4} arrays={2} />
-      </group>
-      <group position={[12.7, -1.1, 0]} rotation={[0, 0, -Math.PI / 2]}>
-        <RadialModule length={11.9} arrays={2} tint="#283160" />
-        <group position={[12.6, 0, 0]}>
-          <Hull from={0} to={4.7} r1={1.1} color="#cfcfc8" />
-        </group>
-      </group>
-      <group position={[12.7, 0, 1.1]} rotation={[0, -Math.PI / 2, 0]}>
-        <RadialModule length={14.4} arrays={4} tint="#2c2a5c" />
-      </group>
-      <group position={[12.7, 0, -1.1]} rotation={[0, Math.PI / 2, 0]}>
-        <RadialModule length={11.6} />
-      </group>
-
-      {cutaway && (
-        <>
-          {/* Interior floor, equipment racks and the oxygen candle (SFOG) */}
-          <mesh position={coreFloor} receiveShadow>
-            <boxGeometry args={[10.5, 0.08, 2.4]} />
-            <meshStandardMaterial color="#6b7a74" roughness={0.8} />
-          </mesh>
-          {Array.from({ length: 6 }, (_, i) => (
-            <mesh key={i} position={[0.9 + i * 1.6, 0.2, -1.35]}>
-              <boxGeometry args={[1.3, 1.6, 0.6]} />
-              <meshStandardMaterial color={i % 2 ? "#a7b0a6" : "#c4c8bd"} roughness={0.7} />
-            </mesh>
-          ))}
-          <mesh position={[-4.6, -0.9, -1.2]}>
-            <boxGeometry args={[0.5, 0.8, 0.5]} />
-            <meshStandardMaterial color="#6f6f66" metalness={0.5} />
-          </mesh>
-          <Smoke amount={kvant.smoke} center={[-2.9, 0, 0]} length={5.6} radius={1.9} tint="#7d756d" />
-          <Smoke amount={core.smoke} center={[5.5, 0, 0]} length={11} radius={1.7} />
-          <Smoke amount={soyuz.smoke} center={[16.6, 0, 0]} length={2.2} radius={1.0} />
-          <Crew frame={frame} anchors={anchors} pose="float" spread={0.9} scale={4.5} />
-          <Label k={6.5} position={[-2.9, 3.6, 0]} name={kvant.name} detail={kvant.visibility} level={kvant.level} />
-          <Label k={6.5} position={[5, 3.2, 0]} name={core.name} detail={core.visibility} level={core.level} />
-          <Label k={6.5} position={[16.4, 2.5, 0]} name={`${soyuz.name} (escape)`} detail={soyuz.visibility} level={soyuz.level} />
-          <Label k={6.5} position={[-10, 2.6, 0]} name="Soyuz bloqueada" detail="Detrás del fuego" level="danger" />
-        </>
-      )}
-      <Fire position={[-4.6, -0.4, -1.1]} intensity={frame.fireIntensity} mode="jet" direction={[0.6, 0.3, 1]} />
-      {config.isolation && frame.time >= 30 && (
-        <mesh position={[0.05, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-          <circleGeometry args={[0.55, 24]} />
-          <meshStandardMaterial color="#c6ed9c" side={THREE.DoubleSide} />
-        </mesh>
-      )}
     </group>
   );
 }
@@ -864,14 +602,14 @@ function ServiceModule({ damaged = false }: { damaged?: boolean }) {
 }
 
 /** Lunar module, docking hatch at y = 0 pointing +Y (mounted inverted on the CM). */
-function LunarModule() {
+function LunarModule({ ghost = false }: { ghost?: boolean }) {
   const gold = foil();
   return (
     <group rotation={[Math.PI, 0, 0]}>
       {/* Ascent stage */}
       <mesh position={[0, -1.4, 0]} castShadow>
         <dodecahedronGeometry args={[1.45, 0]} />
-        <meshStandardMaterial color="#9a9c95" metalness={0.6} roughness={0.45} flatShading />
+        <meshStandardMaterial color="#9a9c95" metalness={0.6} roughness={0.45} flatShading transparent={ghost} opacity={ghost ? 0.25 : 1} depthWrite={!ghost} />
       </mesh>
       <mesh position={[0, -1.25, 1.1]} rotation={[0.25, 0, 0]}>
         <boxGeometry args={[1.5, 1.1, 0.4]} />
@@ -919,97 +657,317 @@ function LunarModule() {
   );
 }
 
-function Apollo13({ frame, cutaway }: Props) {
-  const [sm, cm, lm] = frame.modules;
-  // Stack along +Y then turned to lie along X: SPS → SM → CM → LM.
-  const anchors: Vec3[] = [
-    [0, -2.2, 0],
-    [0, 1.3, 0],
-    [0, 5.6, 0],
+/* --------------------------------------------------------------- scenes */
+
+const outfits: Record<ScenarioId, Outfit> = {
+  mir: { suit: "#2e4a72", trim: "#c9ccc4" }, // blue flight overalls
+  apollo1: { suit: "#e7e4d9", trim: "#9aa0a2", helmet: true }, // A1C pressure suits
+  apollo13: { suit: "#d8d2bf", trim: "#7d7a70" }, // constant-wear garments
+  aegis: { suit: "#3d4b5c", trim: "#e4a477" },
+};
+
+function Mir({ frame, cutaway, config, markers }: VehicleProps) {
+  // 1 unit = 1 m; group scaled to fit. Core runs along +X from x = 0.
+  const white = blanket("#dcdcd2");
+  const ghost = cutaway;
+  const [kvant, core, soyuz] = frame.modules;
+  const path: Vec3[] = [
+    [-2.9, 0, 0],
+    [5.2, 0, 0],
+    [14.9, 0, 0],
   ];
+  const firePos: Vec3 = [-4.7, -1.1, -1.25];
   return (
-    <group scale={0.42} rotation={[0, 0, -Math.PI / 2]} position={[0.6, 0.3, 0]}>
-      <ServiceModule damaged />
-      <CommandModule ghost={cutaway} />
-      <group position={[0, 3.55, 0]}>
-        <LunarModule />
+    <group scale={0.2} position={[-0.5, 0.2, 0.5]} rotation={[0, 0.67, 0]}>
+      {/* Base block */}
+      <Hull from={0} to={6.4} r1={2.07} map={white} ghost={ghost} />
+      <Hull from={6.4} to={7.6} r1={2.07} r2={1.45} map={white} ghost={ghost} />
+      <Hull from={7.6} to={11.6} r1={1.45} map={white} ghost={ghost} />
+      <RingFrame x={0} r={2.07} />
+      <RingFrame x={6.4} r={2.07} />
+      <mesh position={[12.7, 0, 0]} castShadow>
+        <sphereGeometry args={[1.1, 32, 24]} />
+        <meshStandardMaterial color="#cfd1ca" metalness={0.3} roughness={0.6} transparent={ghost} opacity={ghost ? 0.3 : 1} depthWrite={!ghost} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <group key={side} position={[3.5, 1.2, side * 2.07]} rotation={[0, side > 0 ? 0 : Math.PI, 0]}>
+          <SolarWing length={11.5} width={3.4} tint="#2a2f6a" segments={8} />
+        </group>
+      ))}
+      <group position={[9.5, 1.5, 0]}>
+        <Dish radius={0.55} />
       </group>
-      <Fire position={[1.4, -1.5, 0.8]} intensity={frame.fireIntensity * 1.6} mode="vent" direction={[1, 0.15, 0.8]} />
+      {/* Kvant-1 and the Sofora truss */}
+      <Hull from={-5.8} to={0} r1={2.07} map={white} ghost={ghost} />
+      <RingFrame x={-5.8} r={2.07} />
+      <group position={[-3, 2.07, 0]}>
+        <Lattice length={14} width={0.7} />
+        <mesh position={[0, 14.4, 0]}>
+          <boxGeometry args={[1.1, 0.9, 1.1]} />
+          <meshStandardMaterial color="#c8c9c2" map={white} />
+        </mesh>
+      </group>
+      {/* Soyuz TM-24 behind Kvant-1, cut off by the fire */}
+      <group position={[-5.8, 0, 0]}>
+        <Soyuz blocked={frame.fireIntensity > 0.1} />
+      </group>
+      {/* Soyuz TM-25 on the forward port: the escape route that stayed open */}
+      <group position={[13.8, 0, 0]} rotation={[0, Math.PI, 0]}>
+        <Soyuz ghost={ghost} />
+      </group>
+      {/* Kvant-2 (up), Kristall (down), Spektr (+Z), Priroda (−Z) */}
+      <group position={[12.7, 1.1, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <RadialModule length={12.4} arrays={2} />
+      </group>
+      <group position={[12.7, -1.1, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <RadialModule length={11.9} arrays={2} tint="#283160" />
+        <group position={[12.6, 0, 0]}>
+          <Hull from={0} to={4.7} r1={1.1} color="#cfcfc8" />
+        </group>
+      </group>
+      <group position={[12.7, 0, 1.1]} rotation={[0, -Math.PI / 2, 0]}>
+        <RadialModule length={14.4} arrays={4} tint="#2c2a5c" />
+      </group>
+      <group position={[12.7, 0, -1.1]} rotation={[0, Math.PI / 2, 0]}>
+        <RadialModule length={11.6} />
+      </group>
+
       {cutaway && (
         <>
-          <Crew frame={frame} anchors={anchors} pose="float" spread={0.5} scale={1.4} />
-          <Label k={2.6} position={[0, -2.5, 2.6]} name={sm.name} detail="Panel 4 arrancado" level="danger" />
-          <Label k={2.6} position={[0, 1.6, 2.6]} name={cm.name} detail={`Energía ${Math.round(frame.energy)} %`} level={frame.energy < 40 ? "danger" : frame.energy < 70 ? "watch" : "ok"} />
-          <Label k={2.6} position={[0, 6.2, 2.8]} name={`${lm.name} Aquarius`} detail="Refugio" level="ok" />
+          <Interior from={-5.6} to={11.4} radius={1.95} narrowFrom={6.6} narrowRadius={1.4} />
+          {/* Oxygen candle (SFOG) mounted low on the Kvant-1 wall */}
+          <mesh position={[-4.7, -1.35, -1.35]}>
+            <boxGeometry args={[0.45, 0.6, 0.35]} />
+            <meshStandardMaterial color="#5f6058" metalness={0.5} roughness={0.5} />
+          </mesh>
+          <Smoke amount={kvant.smoke} center={[-2.9, 0, 0]} length={5.6} radius={1.9} gravity={config.gravity} flow={config.airflow} tint="#a29d94" />
+          <Smoke amount={core.smoke} center={[5.5, 0, 0]} length={11} radius={1.7} gravity={config.gravity} flow={config.airflow} tint="#a6a49e" />
+          <Smoke amount={soyuz.smoke} center={[15, 0, 0]} length={2.2} radius={1.0} gravity={config.gravity} flow={config.airflow} />
+          <Crew frame={frame} path={path} outfit={outfits.mir} gravity={config.gravity} floor={-1.75} markers={markers} spacing={1.1} />
+          <Label k={6.5} position={[-2.9, 3.4, 0]} name={kvant.name} detail={kvant.visibility} level={kvant.level} />
+          <Label k={6.5} position={[5, 3.1, 0]} name={core.name} detail={core.visibility} level={core.level} />
+          <Label k={6.5} position={[15.2, 2.4, 0]} name="Soyuz TM-25" detail={soyuz.visibility} level={soyuz.level} />
+          <Label k={6.5} position={[-10, 2.6, 0]} name="Soyuz TM-24" detail="Detrás del fuego" level="danger" />
+        </>
+      )}
+      <Marker name="fire" position={firePos} markers={markers} />
+      {/* Lithium perchlorate candle: a torch-like jet. Without gravity the sparks fly straight. */}
+      <Flame
+        position={[-4.7, -1.05, -1.1]}
+        rotation={[0.25, -Math.PI / 2, 0]}
+        size={0.32}
+        intensity={frame.fireIntensity}
+        gravity={config.gravity}
+        flow={1.3}
+        soot={0.95}
+        turbulence={1.6}
+      />
+      <Sparks position={[-4.7, -1.05, -1.1]} direction={[0.15, 0.25, 1]} intensity={frame.fireIntensity} gravity={config.gravity} reach={1.9} />
+      {config.isolation && frame.time >= 30 && (
+        <mesh position={[0.05, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <circleGeometry args={[0.55, 24]} />
+          <meshStandardMaterial color="#c6ed9c" side={THREE.DoubleSide} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/** Generic pressurized interior: floor, racks on both walls, handrails and lights. */
+function Interior({
+  from,
+  to,
+  radius,
+  narrowFrom,
+  narrowRadius,
+}: {
+  from: number;
+  to: number;
+  radius: number;
+  narrowFrom?: number;
+  narrowRadius?: number;
+}) {
+  const bays = Math.floor((to - from) / 1.1);
+  return (
+    <group>
+      {Array.from({ length: bays }, (_, i) => {
+        const x = from + 0.55 + i * 1.1;
+        const r = narrowFrom !== undefined && x > narrowFrom ? narrowRadius! : radius;
+        return (
+          <group key={i} position={[x, 0, 0]}>
+            <mesh position={[0, -r * 0.82, 0]} receiveShadow>
+              <boxGeometry args={[1.0, 0.06, r * 1.0]} />
+              <meshStandardMaterial color="#6d7871" roughness={0.85} />
+            </mesh>
+            {/* Equipment racks on the far wall only, so the crew stays visible. */}
+            <mesh position={[0, -0.1, -r * 0.78]}>
+              <boxGeometry args={[0.95, r * 0.95, 0.26]} />
+              <meshStandardMaterial color={i % 3 ? "#b9bdb3" : "#9fa79d"} roughness={0.7} />
+            </mesh>
+            <mesh position={[0.2, 0.15, -r * 0.64]}>
+              <boxGeometry args={[0.32, 0.22, 0.02]} />
+              <meshStandardMaterial color="#14262b" emissive="#2f6f63" emissiveIntensity={0.4} />
+            </mesh>
+            <mesh position={[0, r * 0.74, 0]}>
+              <boxGeometry args={[0.6, 0.03, 0.18]} />
+              <meshStandardMaterial color="#f4f1e2" emissive="#f4f1e2" emissiveIntensity={0.6} />
+            </mesh>
+            <mesh position={[0, r * 0.3, r * 0.52]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[0.025, 0.025, 0.9, 8]} />
+              <meshStandardMaterial color="#c9a347" metalness={0.6} roughness={0.4} />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function Apollo13({ frame, cutaway, config, markers }: VehicleProps) {
+  const [sm] = frame.modules;
+  // Stack along +Y then laid along X: SPS engine → SM → CM → LM.
+  const path: Vec3[] = [
+    [0, -2.2, 0],
+    [0, 1.25, 0],
+    [0, 5.0, 0],
+  ];
+  const since = frame.time - IGNITION_TIME;
+  const bay = Math.PI / 6;
+  const out: Vec3 = [Math.sin(bay), 0, Math.cos(bay)];
+  return (
+    <group scale={0.42} rotation={[0, 0, -Math.PI / 2]} position={[0.6, 0.3, 0]}>
+      <ServiceModule damaged={since >= 0} />
+      <CommandModule ghost={cutaway} />
+      <group position={[0, 3.55, 0]}>
+        <LunarModule ghost={cutaway} />
+      </group>
+      <Marker name="fire" position={[out[0] * 1.9, -2.3, out[2] * 1.9]} markers={markers} />
+      {/* No flame is visible: the tank ruptured inside the module. Oxygen escapes as a sunlit cloud. */}
+      <Vent position={[out[0] * 1.95, -2.3, out[2] * 1.95]} direction={out} intensity={since >= 0 ? Math.max(0.15, 1 - since / 140) : 0} burst={since >= 0 && since < 6 ? 1 - since / 6 : 0} />
+      {since >= 0 && since < 3 && <pointLight position={[out[0] * 2.5, -2.3, out[2] * 2.5]} intensity={40 * (1 - since / 3)} distance={20} color="#fff3d6" />}
+      {/* Bay 4 panel drifting away */}
+      {since >= 0 && since < 60 && (
+        <group position={[out[0] * (2 + since * 0.35), -2.3 + since * 0.05, out[2] * (2 + since * 0.35)]} rotation={[since * 0.08, bay + since * 0.05, since * 0.03]}>
+          <mesh>
+            <cylinderGeometry args={[1.96, 1.96, 4.2, 12, 1, true, -Math.PI / 6, Math.PI / 3]} />
+            <meshStandardMaterial color="#e3e5e2" metalness={0.7} roughness={0.3} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      )}
+      {cutaway && (
+        <>
+          <Crew frame={frame} path={path} outfit={outfits.apollo13} gravity={config.gravity} markers={markers} spacing={0.55} />
+          <Label k={2.6} position={[0, -2.5, 2.6]} name="Servicio" detail={since >= 0 ? "Panel 4 arrancado" : "Normal"} level={since >= 0 ? "danger" : "ok"} />
+          <Label k={2.6} position={[0, 1.6, 2.6]} name="Mando Odyssey" detail={`Energía ${Math.round(frame.energy)} %`} level={frame.energy < 40 ? "danger" : frame.energy < 70 ? "watch" : "ok"} />
+          <Label k={2.6} position={[0, 6.2, 2.8]} name="Lunar Aquarius" detail={config.backup ? "Refugio" : "Sin preparar"} level={config.backup ? "ok" : "watch"} />
+          <Label k={2.6} position={[0, -0.4, -2.6]} name={sm.name === "Servicio" ? "Tanque O₂ 2" : sm.name} detail={since >= 0 ? "Roto" : "Agitando"} level={since >= 0 ? "danger" : "watch"} />
         </>
       )}
     </group>
   );
 }
 
-function Apollo1({ frame, cutaway, config }: Props) {
+function Apollo1({ frame, cutaway, config, markers }: VehicleProps) {
   const [cabin, hatch] = frame.modules;
   const hatchOpen = config.isolation && frame.crew.some((value) => value > 0);
-  const anchors: Vec3[] = [
-    [0, 1.25, 0],
-    [0, 1.45, 2.0],
-    [0, 1.1, 3.5],
+  const path: Vec3[] = [
+    [0, 1.05, 0],
+    [0, 1.0, 2.1],
+    [0, 0.98, 3.4],
   ];
+  // Couches: Grissom (left), White (centre), Chaffee (right).
+  const seats: Vec3[] = [
+    [-0.72, 0.74, -0.15],
+    [0, 0.74, -0.15],
+    [0.72, 0.74, -0.15],
+  ];
+  const spread = Math.min(1, frame.fireIntensity / 1.2);
+  const ruptured = frame.pressure < 140 && frame.time > 20 && frame.temperature > 100;
+  const soot = sootFor(config);
   return (
     <group scale={0.95} position={[0, -1.3, 0]} rotation={[0, Math.PI / 2, 0]}>
       <CommandModule ghost={cutaway} hatchOpen={hatchOpen} />
       <ServiceModule />
-      {/* Service structure: white room and access arm on the hatch side */}
+      {/* Adapter and S-IVB stage of the Saturn IB below, fading into the night */}
+      <mesh position={[0, -6.6, 0]}>
+        <cylinderGeometry args={[1.96, 3.3, 4.2, 48, 1, true]} />
+        <meshStandardMaterial color="#e8e9e4" roughness={0.6} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, -13.5, 0]}>
+        <cylinderGeometry args={[3.3, 3.3, 9.6, 48]} />
+        <meshStandardMaterial color="#eeeeea" roughness={0.6} />
+      </mesh>
+      {/* Service structure: white room, access arm and the launch tower */}
       <group position={[0, 1.4, 3.3]}>
         <mesh>
           <boxGeometry args={[1.8, 2.2, 1.2]} />
           <meshStandardMaterial color="#e9ebe6" roughness={0.7} transparent opacity={cutaway ? 0.22 : 1} depthWrite={!cutaway} />
         </mesh>
-        <mesh position={[0, -1.2, 2.0]}>
-          <boxGeometry args={[1.4, 0.2, 3.0]} />
+        <mesh position={[0, -1.2, 2.4]}>
+          <boxGeometry args={[1.4, 0.2, 3.8]} />
           <meshStandardMaterial color="#b3402f" metalness={0.4} roughness={0.6} />
         </mesh>
-        {[-0.8, 0.8].map((x) => (
-          <mesh key={x} position={[x, -0.6, 3.6]}>
-            <boxGeometry args={[0.12, 1.6, 0.12]} />
-            <meshStandardMaterial color="#b3402f" />
-          </mesh>
-        ))}
+      </group>
+      <group position={[0, -18, 7.4]}>
+        <Lattice length={22} width={2.6} />
       </group>
       {cutaway && (
         <>
-          {/* Three couches: Grissom (left), White (centre), Chaffee (right) */}
-          {[-0.75, 0, 0.75].map((x) => (
-            <mesh key={x} position={[x, 0.95, 0]} rotation={[0.25, 0, 0]}>
-              <boxGeometry args={[0.5, 0.12, 1.5]} />
-              <meshStandardMaterial color="#7d8075" roughness={0.8} />
-            </mesh>
+          {seats.map((seat, i) => (
+            <group key={i} position={[seat[0], 0.55, -0.1]}>
+              <mesh rotation={[-0.15, 0, 0]}>
+                <boxGeometry args={[0.55, 0.08, 1.7]} />
+                <meshStandardMaterial color="#6f7368" roughness={0.85} />
+              </mesh>
+              <mesh position={[0, 0.35, 0.75]} rotation={[0.9, 0, 0]}>
+                <boxGeometry args={[0.55, 0.08, 0.6]} />
+                <meshStandardMaterial color="#6f7368" roughness={0.85} />
+              </mesh>
+            </group>
           ))}
-          {/* Main display console */}
-          <mesh position={[0, 2.15, -0.2]} rotation={[0.9, 0, 0]}>
-            <boxGeometry args={[2.0, 0.08, 0.7]} />
+          {/* Main display console above the crew */}
+          <mesh position={[0, 2.05, -0.15]} rotation={[0.35, 0, 0]}>
+            <boxGeometry args={[2.1, 0.08, 0.75]} />
             <meshStandardMaterial color="#2c3438" emissive="#2f6f63" emissiveIntensity={0.25} />
           </mesh>
-          <Crew frame={frame} anchors={anchors} pose={frame.crew.every((v) => v === 0) ? "seated" : "stand"} spread={0.75} scale={1.1} />
-          <Smoke amount={cabin.smoke} center={[0, 1.3, 0]} length={2.4} radius={1.2} tint="#5d5650" />
-          <Label k={2} position={[0, 3.9, 0]} name={cabin.name} detail={`${Math.round(frame.pressure)} kPa · ${cabin.visibility}`} level={frame.pressure > 160 ? "danger" : cabin.level} />
-          <Label k={2} position={[0, 2.8, 2.9]} name={hatch.name} detail={hatchOpen ? "Abierta" : config.isolation ? "Apertura rápida" : "Abre hacia dentro"} level={hatchOpen ? "ok" : "danger"} />
+          <Crew frame={frame} path={path} seats={seats} outfit={outfits.apollo1} gravity={1} floor={0.25} markers={markers} spacing={0.6} />
+          <Smoke amount={cabin.smoke} center={[0, 1.3, 0]} length={2.6} radius={1.25} gravity={1} tint="#4a4540" />
+          <Label k={2} position={[0, 3.9, 0]} name="Cabina" detail={`${Math.round(frame.pressure)} kPa · ${cabin.visibility}`} level={frame.pressure > 160 || ruptured ? "danger" : cabin.level} />
+          <Label k={2} position={[0, 2.9, 2.9]} name={hatch.name} detail={hatchOpen ? "Abierta" : config.isolation ? "Apertura rápida" : "Abre hacia dentro"} level={hatchOpen ? "ok" : "danger"} />
         </>
       )}
-      <Fire position={[-0.75, 0.55, 0.2]} intensity={frame.fireIntensity} mode="buoyant" />
+      <Marker name="fire" position={[-0.75, 0.6, 0.2]} markers={markers} />
+      {/* Starts below the left couch, then spreads left to right across nets and Velcro. */}
+      {[
+        [-0.85, 0.42, 0.25, 0],
+        [-0.55, 0.7, -0.3, 0.25],
+        [-0.1, 0.55, 0.45, 0.45],
+        [0.35, 0.8, -0.2, 0.62],
+        [0.8, 0.5, 0.3, 0.8],
+      ].map(([x, y, z, threshold], i) => (
+        <Flame
+          key={i}
+          position={[x, y, z]}
+          size={0.22 + 0.06 * (1 - threshold)}
+          intensity={spread > threshold ? frame.fireIntensity * (1 - threshold * 0.4) : 0}
+          gravity={config.gravity}
+          soot={soot}
+          light={i % 2 === 0}
+        />
+      ))}
     </group>
   );
 }
 
-function Aegis({ frame, cutaway, config }: Props) {
+function Aegis({ frame, cutaway, config, markers }: VehicleProps) {
   const [service, habitat, refuge] = frame.modules;
   const ghost = cutaway;
   const panel = blanket("#e4e7e2");
   const closed = config.isolation && frame.time >= 19;
-  const anchors: Vec3[] = [
-    [-5.5, -0.5, 0],
-    [0, -0.5, 0],
-    [6.2, -0.5, 0],
+  const path: Vec3[] = [
+    [-5.5, 0, 0],
+    [0.2, 0, 0],
+    [6.2, 0, 0],
   ];
   return (
     <group scale={0.36} position={[0, 0.2, 0]}>
@@ -1035,7 +993,6 @@ function Aegis({ frame, cutaway, config }: Props) {
       {[-8, -3.2, -2.6, 3.2, 4, 8.4].map((x, i) => (
         <RingFrame key={x} x={x} r={[1.8, 1.8, 2.3, 2.3, 1.9, 1.9][i]} color="#69c8c6" />
       ))}
-      {/* Truss, arrays and radiators */}
       {[-1, 1].map((side) => (
         <group key={side} position={[-1, 3.4, side * 0.3]} rotation={[0, side > 0 ? 0 : Math.PI, 0]}>
           <SolarWing length={9} width={3.2} tint="#1d3a6b" segments={5} />
@@ -1046,13 +1003,12 @@ function Aegis({ frame, cutaway, config }: Props) {
         <meshStandardMaterial color="#9aa1a5" metalness={0.7} />
       </mesh>
       {[-1, 1].map((side) => (
-        <mesh key={side} position={[-5.6, -2.4, side * 1.4]} rotation={[0, 0, 0]}>
+        <mesh key={side} position={[-5.6, -2.4, side * 1.4]}>
           <boxGeometry args={[3.6, 0.05, 2.2]} />
           <meshStandardMaterial color="#f4f6f2" roughness={0.5} />
         </mesh>
       ))}
-      {/* Refuge has its own power and radiator */}
-      <group position={[6.2, 1.9, 0]} rotation={[0, 0, 0]}>
+      <group position={[6.2, 1.9, 0]}>
         <SolarWing length={4} width={1.6} tint="#1d3a6b" segments={3} />
       </group>
       <group position={[1.5, 2.3, -0.4]}>
@@ -1060,109 +1016,167 @@ function Aegis({ frame, cutaway, config }: Props) {
       </group>
       {cutaway && (
         <>
-          <mesh position={[0, -1.1, 0]}>
-            <boxGeometry args={[16, 0.08, 2.6]} />
-            <meshStandardMaterial color="#5c6b6a" roughness={0.8} />
-          </mesh>
-          {Array.from({ length: 5 }, (_, i) => (
-            <mesh key={i} position={[-1.8 + i * 1.1, 0, -1.7]}>
-              <boxGeometry args={[0.9, 1.9, 0.5]} />
-              <meshStandardMaterial color={i % 2 ? "#a7b0a6" : "#c9cec4"} />
-            </mesh>
-          ))}
-          <Smoke amount={service.smoke} center={[-5.6, 0, 0]} length={4.4} radius={1.6} tint="#7b736c" />
-          <Smoke amount={habitat.smoke} center={[0.3, 0, 0]} length={5.6} radius={2.0} />
-          <Smoke amount={refuge.smoke} center={[6.2, 0, 0]} length={4.2} radius={1.7} />
-          <Crew frame={frame} anchors={anchors} pose="float" spread={0.75} scale={2.6} />
+          <Interior from={-7.8} to={8.2} radius={1.75} />
+          <Smoke amount={service.smoke} center={[-5.6, 0, 0]} length={4.4} radius={1.6} gravity={config.gravity} flow={config.airflow} tint="#8b847c" />
+          <Smoke amount={habitat.smoke} center={[0.3, 0, 0]} length={5.6} radius={2.0} gravity={config.gravity} flow={config.airflow} />
+          <Smoke amount={refuge.smoke} center={[6.2, 0, 0]} length={4.2} radius={1.7} gravity={config.gravity} flow={config.airflow} />
+          <Crew frame={frame} path={path} outfit={outfits.aegis} gravity={config.gravity} floor={-1.4} markers={markers} spacing={0.95} />
           <Label k={2.8} position={[-5.6, 3.0, 0]} name={service.name} detail={service.visibility} level={service.level} />
           <Label k={2.8} position={[0.3, 3.5, 0]} name={habitat.name} detail={habitat.visibility} level={habitat.level} />
           <Label k={2.8} position={[6.2, 3.0, 0]} name={refuge.name} detail={refuge.visibility} level={refuge.level} />
         </>
       )}
-      <Fire
-        position={[-6, -0.3, 0.6]}
+      <Marker name="fire" position={[-6, -0.6, 0.9]} markers={markers} />
+      {/* Overheated cable behind a panel. In orbit: round, blue, carried by the fan airflow. */}
+      <Flame
+        position={[-6, -0.6, 0.9]}
+        size={0.28}
         intensity={frame.fireIntensity}
-        mode={config.gravity < 0.05 ? "micro" : "buoyant"}
-        flow={config.airflow}
+        gravity={config.gravity}
+        flow={config.airflow * 4}
+        soot={sootFor(config) * (0.4 + config.gravity * 0.6)}
       />
     </group>
   );
 }
 
+/* --------------------------------------------------------------- camera */
+
 const framing: Record<ScenarioId, { width: number; min: number; target: Vec3 }> = {
-  mir: { width: 10, min: 5, target: [0.4, 0.1, 0] },
-  apollo1: { width: 9, min: 3.5, target: [0, 0.4, 0] },
-  apollo13: { width: 8.5, min: 4, target: [0.4, 0.2, 0] },
-  aegis: { width: 7.5, min: 4, target: [0, 0.2, 0] },
+  mir: { width: 10, min: 1.2, target: [0.4, 0.1, 0] },
+  apollo1: { width: 9, min: 1.2, target: [0, 0.4, 0] },
+  apollo13: { width: 8.5, min: 1.2, target: [0.4, 0.2, 0] },
+  aegis: { width: 7.5, min: 1.2, target: [0, 0.2, 0] },
 };
 
-function CameraFit({ scenario }: { scenario: ScenarioId }) {
+/** Frames the vehicle, then glides to the fire or follows the crew on request. */
+function CameraRig({ scenario, focus, markers }: { scenario: ScenarioId; focus: CameraFocus; markers: Markers }) {
   const { camera, size, controls } = useThree();
+  const goal = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const orbit = controls as unknown as { target: THREE.Vector3; update: () => void } | null;
   useEffect(() => {
     const { width, target } = framing[scenario];
     const aspect = size.width / Math.max(size.height, 1);
     const fov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
-    const distance = Math.max(width / (2 * Math.tan(fov / 2) * Math.min(aspect, 1.8)) * 1.15, 6);
+    const distance = Math.max((width / (2 * Math.tan(fov / 2) * Math.min(aspect, 1.8))) * 1.15, 6);
     const direction = new THREE.Vector3(0.75, 0.45, 0.95).normalize();
-    camera.position.copy(direction.multiplyScalar(distance).add(new THREE.Vector3(...target)));
-    camera.lookAt(...target);
-    const orbit = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
-    orbit?.target?.set(...target);
-    orbit?.update?.();
+    goal.current = {
+      position: direction.multiplyScalar(distance).add(new THREE.Vector3(...target)),
+      target: new THREE.Vector3(...target),
+    };
+    if (focus === "general") {
+      camera.position.copy(goal.current.position);
+      orbit?.target.copy(goal.current.target);
+      orbit?.update();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera, size.width, size.height, scenario, controls]);
+  useEffect(() => {
+    if (focus === "general") {
+      const { width, target } = framing[scenario];
+      const aspect = size.width / Math.max(size.height, 1);
+      const fov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
+      const distance = Math.max((width / (2 * Math.tan(fov / 2) * Math.min(aspect, 1.8))) * 1.15, 6);
+      goal.current = {
+        position: new THREE.Vector3(0.75, 0.45, 0.95).normalize().multiplyScalar(distance).add(new THREE.Vector3(...target)),
+        target: new THREE.Vector3(...target),
+      };
+    } else goal.current = null;
+  }, [focus, scenario, camera, size.width, size.height]);
+  const scratch = useMemo(() => new THREE.Vector3(), []);
+  useFrame((_, delta) => {
+    if (!orbit) return;
+    const k = 1 - Math.exp(-delta * 2.5);
+    if (focus !== "general") {
+      const node = focus === "fire" ? markers.current.fire : markers.current.crew;
+      if (!node) return;
+      node.getWorldPosition(scratch);
+      const distance = focus === "fire" ? 2.2 : 2.6;
+      const offset = camera.position.clone().sub(orbit.target).normalize().multiplyScalar(distance);
+      orbit.target.lerp(scratch, k);
+      camera.position.lerp(scratch.clone().add(offset), k);
+      orbit.update();
+    } else if (goal.current) {
+      orbit.target.lerp(goal.current.target, k);
+      camera.position.lerp(goal.current.position, k);
+      orbit.update();
+      if (camera.position.distanceTo(goal.current.position) < 0.02) goal.current = null;
+    }
+  });
   return null;
 }
 
-function Scene({ children }: { children: ReactNode }) {
+function Backdrop({ scenario }: { scenario: ScenarioId }) {
+  if (scenario === "apollo1")
+    return (
+      <>
+        {/* Launch Complex 34 at night: floodlights and the pad far below. */}
+        <spotLight position={[10, 6, 14]} angle={0.5} penumbra={0.6} intensity={180} color="#ffe9c4" />
+        <mesh position={[0, -22, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[80, 48]} />
+          <meshStandardMaterial color="#1a1e1f" roughness={1} />
+        </mesh>
+      </>
+    );
+  if (scenario === "apollo13")
+    return (
+      <>
+        {/* ~322 000 km from Earth and ~70 000 km from the Moon: both look small. */}
+        <Earth position={[-70, 12, -90]} radius={2.4} />
+        <Moon position={[80, -6, -70]} radius={2.6} />
+      </>
+    );
+  // Low Earth orbit, ~400 km up: Earth fills the lower view.
+  return <Earth position={[0, -520, -120]} radius={480} />;
+}
+
+function Scene({ scenario, children }: { scenario: ScenarioId; children: ReactNode }) {
+  const night = scenario === "apollo1";
   return (
     <>
-      <ambientLight intensity={0.25} color="#b3d8e1" />
-      <directionalLight position={[8, 6, 5]} intensity={3.4} color="#fff3dc" castShadow shadow-mapSize={[1024, 1024]} />
-      <directionalLight position={[-6, -3, -4]} intensity={0.5} color="#5a8fbf" />
+      <ambientLight intensity={night ? 0.12 : 0.18} color="#b3d8e1" />
+      {!night && <directionalLight position={[8, 5, 6]} intensity={3.6} color="#fff6e6" castShadow shadow-mapSize={[1024, 1024]} />}
+      <directionalLight position={[-6, -3, -4]} intensity={night ? 0.2 : 0.45} color="#5a8fbf" />
       <Environment resolution={64}>
-        <Lightformer form="rect" intensity={2.2} color="#ffffff" position={[6, 5, 6]} scale={[10, 6, 1]} />
-        <Lightformer form="rect" intensity={1.2} color="#3f87c9" position={[-6, -4, -2]} scale={[12, 6, 1]} />
-        <Lightformer form="ring" intensity={0.8} color="#ffd9a8" position={[0, 8, -6]} scale={4} />
+        <Lightformer form="rect" intensity={night ? 0.6 : 2.2} color="#ffffff" position={[6, 5, 6]} scale={[10, 6, 1]} />
+        <Lightformer form="rect" intensity={night ? 0.3 : 1.2} color="#3f87c9" position={[-6, -4, -2]} scale={[12, 6, 1]} />
       </Environment>
-      <Stars radius={80} depth={30} count={1400} factor={2} saturation={0} fade speed={0.15} />
+      <Stars radius={150} depth={40} count={2200} factor={2.2} saturation={0} fade speed={0.1} />
+      <Backdrop scenario={scenario} />
       {children}
     </>
   );
 }
 
 export default function Spacecraft(props: Props) {
-  const ground = props.scenario === "apollo1";
+  const markers: Markers = useRef({});
+  const focus = props.focus ?? "general";
+  const vehicle = { ...props, markers };
   return (
     <Canvas
       shadows
-      dpr={[1, 1.6]}
-      camera={{ position: [7.6, 5.0, 8.5], fov: 34 }}
+      dpr={[1, 1.75]}
+      camera={{ position: [7.6, 5.0, 8.5], fov: 34, near: 0.05, far: 2000 }}
       gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping }}
       style={{ width: "100%", height: "100%", touchAction: "none" }}
       aria-label={`Modelo 3D de ${scenarioInfo[props.scenario].title}. Arrastra para girar y usa la rueda para acercar.`}
     >
       <Suspense fallback={null}>
-        <Scene>
+        <LabelsVisible.Provider value={focus === "general"}>
+        <Scene scenario={props.scenario}>
           {props.scenario === "mir" ? (
-            <Mir {...props} />
+            <Mir {...vehicle} />
           ) : props.scenario === "apollo1" ? (
-            <Apollo1 {...props} />
+            <Apollo1 {...vehicle} />
           ) : props.scenario === "apollo13" ? (
-            <Apollo13 {...props} />
+            <Apollo13 {...vehicle} />
           ) : (
-            <Aegis {...props} />
+            <Aegis {...vehicle} />
           )}
-          {ground && <ContactShadows position={[0, -1.45, 0]} opacity={0.35} scale={14} blur={2.5} far={5} color="#000" />}
         </Scene>
-        <OrbitControls
-          makeDefault
-          enablePan={false}
-          minDistance={framing[props.scenario].min}
-          maxDistance={40}
-          enableDamping
-          dampingFactor={0.08}
-        />
-        <CameraFit scenario={props.scenario} />
+        </LabelsVisible.Provider>
+        <OrbitControls makeDefault enablePan={false} minDistance={framing[props.scenario].min} maxDistance={45} enableDamping dampingFactor={0.08} />
+        <CameraRig scenario={props.scenario} focus={focus} markers={markers} />
       </Suspense>
     </Canvas>
   );
