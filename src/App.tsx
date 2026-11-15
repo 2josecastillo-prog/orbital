@@ -15,6 +15,7 @@ import {
   Layers3,
   LayoutDashboard,
   Menu,
+  Microscope,
   Orbit,
   Search,
   Send,
@@ -24,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import ExperimentalExplorer from "./components/ExperimentalExplorer";
+import ExperimentsLab from "./components/ExperimentsLab";
 import Lab from "./components/Lab";
 import Overview from "./components/Overview";
 import SafetyDashboard from "./components/SafetyDashboard";
@@ -47,6 +49,7 @@ type Page =
   | "research"
   | "compare"
   | "history"
+  | "experiments"
   | "method"
   | "assistant"
   | "sources";
@@ -55,6 +58,7 @@ const nav = [
   { id: "overview", label: "Inicio", icon: LayoutDashboard, group: "Inicio" },
   { id: "safety", label: "Panel de seguridad", icon: ShieldCheck, group: "Análisis" },
   { id: "history", label: "Los tres accidentes", icon: BookOpen, group: "Aprender" },
+  { id: "experiments", label: "Simulador de experimentos", icon: Microscope, group: "Aprender" },
   { id: "lab", label: "Simulador", icon: Orbit, group: "Aprender" },
   { id: "aegis", label: "Información sobre AEGIS", icon: ShieldCheck, group: "Aprender" },
   { id: "method", label: "Cómo funciona", icon: SlidersHorizontal, group: "Aprender" },
@@ -325,6 +329,8 @@ function App() {
           )}
 
           {page === "method" && <Method onOpenLab={() => navigate("lab")} />}
+
+          {page === "experiments" && <ExperimentsLab onOpenLab={() => navigate("lab")} />}
 
           {page === "lab" && (
             <Lab

@@ -12,6 +12,7 @@ La clave de Google se configura en `.env.local`, siguiendo `.env.example`. Es un
 
 - **Inicio**: por qué el fuego en una nave es distinto, los tres accidentes con su desenlace real (0/3, 3/3 y 6/6 supervivientes) y dos recorridos: uno para quien no conoce el tema y otro para analistas.
 - **Los tres accidentes**: Apollo 1, Apollo 13 y Mir con fecha, lugar, tripulación, cronología, lección y qué cambió después.
+- **Simulador de experimentos**: cinco modelos 3D interactivos (FLEX, BASS, Saffire-I, Saffire-II y SAME) con animación del ensayo por fases, puntos de interés, datos de referencia y fuentes NASA. Usa `model-viewer` (Apache-2.0) copiado en `public/vendor`; los GLB se generan con `scripts/build_experiment_models.py` (Blender) y viven en `public/models/experimentos`.
 - **Simulador 3D**:
   - Modelos de Mir (1997), Apollo 13 (CSM y módulo lunar acoplados, con el panel 4 desprendiéndose y los módulos soltados antes de la reentrada), Apollo 1 en la plataforma de noche y la nave conceptual AEGIS.
   - Tripulación con personas articuladas a escala real (modelo Xbot de Mixamo con esqueleto): caminan con gravedad, adoptan la postura neutra de microgravedad, van tumbadas en los asientos del Apollo 1 y se desploman al perder el conocimiento. Un indicador sobre cada una muestra su estado.
