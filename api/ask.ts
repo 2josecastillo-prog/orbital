@@ -1,4 +1,4 @@
-import { handleApi } from "../server/api";
+import { handleApi } from "../server/api.js";
 
 export async function POST(request: Request) {
   return (await handleApi(request, process.env)) ??
