@@ -99,7 +99,6 @@ export default function Lab({
   const alternatives = useMemo(() => whatIfs(config), [config]);
   const info = scenarioInfo[config.scenario];
   const frame = run.frames[Math.min(index, DURATION)];
-  const finished = index >= DURATION;
 
   useEffect(() => {
     cursor.current = jumpEnd ? DURATION : 0;
@@ -360,84 +359,73 @@ export default function Lab({
         </div>
       </section>
 
-      <section className={cx("verdict", run.outcome.level, !finished && "locked")} aria-live="polite">
-        {!finished ? (
-          <div className="verdict-locked">
-            <p>El desenlace aparece al final del ensayo.</p>
-            <button className="button primary" onClick={() => go(DURATION)}>
-              Ver el desenlace
-            </button>
+      <section className={cx("verdict", run.outcome.level)} aria-label="Desenlace simulado" aria-live="polite">
+        <header>
+          <div className="verdict-count">
+            <strong>{run.outcome.safe}</strong>
+            <span>de {run.outcome.crew} sobreviven</span>
           </div>
-        ) : (
-          <>
-            <header>
-              <div className="verdict-count">
-                <strong>{run.outcome.safe}</strong>
-                <span>de {run.outcome.crew} sobreviven</span>
-              </div>
-              <div>
-                <h2>{run.outcome.title}</h2>
-                <p>{run.outcome.summary}</p>
-              </div>
-            </header>
-            <div className="verdict-grid">
-              <div>
-                <h3>Cada persona</h3>
-                <ul className="people">
-                  {run.outcome.people.map((p, i) => (
-                    <li key={p.role}>
-                      <span className="swatch" style={{ background: personColors[i] }} />
-                      <span>{p.role}</span>
-                      <span className={cx("state", p.state)}>{stateText[p.state]}</span>
-                      <span className="mono">{p.when ?? "—"}</span>
-                    </li>
-                  ))}
-                </ul>
-                <h3>Valores máximos frente al límite</h3>
-                <ul className="peaks">
-                  {run.outcome.peaks.map((p) => (
-                    <li key={p.label} className={p.exceeded ? "over" : ""}>
-                      <span>{p.label}</span>
-                      <strong>{p.value}</strong>
-                      <small>límite {p.limit}</small>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3>Por qué terminó así</h3>
-                <ul className="factors">
-                  {run.outcome.factors.map((f) => (
-                    <li key={f.text} className={f.good ? "good" : "bad"}>
-                      {f.good ? <Check size={15} /> : <X size={15} />}
-                      {f.text}
-                    </li>
-                  ))}
-                </ul>
-                <h3>¿Y si cambias una sola cosa?</h3>
-                <ul className="whatif">
-                  {alternatives.map((w) => (
-                    <li key={w.label}>
-                      <span>{w.label}</span>
-                      <b className={w.delta > 0 ? "up" : w.delta < 0 ? "down" : ""}>
-                        {w.delta > 0 ? `${w.delta} ${w.delta === 1 ? "vida salvada" : "vidas salvadas"}` : w.delta < 0 ? `${-w.delta} ${w.delta === -1 ? "muerte más" : "muertes más"}` : "sin cambio"}
-                      </b>
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          setJumpEnd(true);
-                          update(w.change);
-                        }}
-                      >
-                        Probar
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </>
-        )}
+          <div>
+            <h2>{run.outcome.title}</h2>
+            <p>{run.outcome.summary}</p>
+          </div>
+        </header>
+        <div className="verdict-grid">
+          <div>
+            <h3>Cada persona</h3>
+            <ul className="people">
+              {run.outcome.people.map((p, i) => (
+                <li key={p.role}>
+                  <span className="swatch" style={{ background: personColors[i] }} />
+                  <span>{p.role}</span>
+                  <span className={cx("state", p.state)}>{stateText[p.state]}</span>
+                  <span className="mono">{p.when ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+            <h3>Valores máximos frente al límite</h3>
+            <ul className="peaks">
+              {run.outcome.peaks.map((p) => (
+                <li key={p.label} className={p.exceeded ? "over" : ""}>
+                  <span>{p.label}</span>
+                  <strong>{p.value}</strong>
+                  <small>límite {p.limit}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Por qué terminó así</h3>
+            <ul className="factors">
+              {run.outcome.factors.map((f) => (
+                <li key={f.text} className={f.good ? "good" : "bad"}>
+                  {f.good ? <Check size={15} /> : <X size={15} />}
+                  {f.text}
+                </li>
+              ))}
+            </ul>
+            <h3>¿Y si cambias una sola cosa?</h3>
+            <ul className="whatif">
+              {alternatives.map((w) => (
+                <li key={w.label}>
+                  <span>{w.label}</span>
+                  <b className={w.delta > 0 ? "up" : w.delta < 0 ? "down" : ""}>
+                    {w.delta > 0 ? `${w.delta} ${w.delta === 1 ? "vida salvada" : "vidas salvadas"}` : w.delta < 0 ? `${-w.delta} ${w.delta === -1 ? "muerte más" : "muertes más"}` : "sin cambio"}
+                  </b>
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      setJumpEnd(true);
+                      update(w.change);
+                    }}
+                  >
+                    Probar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </section>
 
       <p className="footnote">
