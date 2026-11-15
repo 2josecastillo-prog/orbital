@@ -100,7 +100,6 @@ export default function Lab({
   const info = scenarioInfo[config.scenario];
   const frame = run.frames[Math.min(index, DURATION)];
   const finished = index >= DURATION;
-  const past = run.events.filter((e) => e.index <= index);
 
   useEffect(() => {
     cursor.current = jumpEnd ? DURATION : 0;
@@ -338,11 +337,13 @@ export default function Lab({
           <div className="panel-head">
             <h2>Qué ha pasado</h2>
           </div>
-          {past.length === 0 ? (
-            <p className="hint">Pulsa reproducir. Los sucesos aparecerán aquí en orden.</p>
+          {run.events.length === 0 ? (
+            <p className="hint">Esta configuración no registra eventos.</p>
           ) : (
+            <>
+            <p className="hint">Selecciona un evento para ir a ese momento del ensayo.</p>
             <ol className="event-list">
-              {past.map((e) => (
+              {run.events.map((e) => (
                 <li key={e.kind} className={e.tone}>
                   <button onClick={() => go(e.index)}>
                     <time>{run.frames[Math.min(e.index, DURATION)].clock.replace("T ", "")}</time>
@@ -354,6 +355,7 @@ export default function Lab({
                 </li>
               ))}
             </ol>
+            </>
           )}
         </div>
       </section>
