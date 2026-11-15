@@ -1,8 +1,6 @@
 import { ScenarioReference, ReferenceLink, methodSources } from "./ReferenceLink";
-import AegisDesign from "./AegisDesign";
 import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowDownToLine,
   Check,
   CircleHelp,
   Flame as FlameIcon,
@@ -20,20 +18,14 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   DURATION,
-  FED_IMPAIRED,
-  FED_INCAPACITATED,
-  FED_LETHAL,
   clockText,
   historicalConfig,
-  oxygenBoost,
   runSimulation,
   scenarioInfo,
   stateText,
   whatIfs,
-  type Level,
   type Protection,
   type ScenarioId,
   type SimConfig,
@@ -76,41 +68,18 @@ function SceneDiagram({ frame, retry }: { frame: SimFrame; retry: () => void }) 
   );
 }
 
-function download(name: string, content: string, type = "application/json") {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-type Metric = "temperature" | "co" | "visibility" | "dose" | "co2" | "power";
-const metricInfo: Record<Metric, { label: string; unit: string; limit?: number; limitLabel?: string }> = {
-  temperature: { label: "Temperatura", unit: "°C", limit: 60, limitLabel: "60 °C: el aire quema al respirar" },
-  co: { label: "Monóxido de carbono", unit: "ppm", limit: 1400, limitLabel: "1400 ppm: peligro grave en 30 min" },
-  visibility: { label: "Visibilidad", unit: "m", limit: 3, limitLabel: "3 m: ya no se ve la salida" },
-  dose: { label: "Dosis por persona", unit: "", limit: 1, limitLabel: "1: pérdida de conocimiento" },
-  co2: { label: "CO₂ en la cabina", unit: "mmHg", limit: 15, limitLabel: "15 mmHg: síntomas graves" },
-  power: { label: "Baterías de reentrada", unit: "%", limit: 50, limitLabel: "50 %: mínimo para volver" },
-};
-const moduleColors = ["var(--flight-forest)", "var(--chart-mint)", "var(--chart-teal)"];
 const personColors = ["var(--flight-forest)", "var(--chart-mint)", "var(--chart-teal)", "#8e682e", "#756086", "#97566b"];
-
-function levelOf(value: number, metric: "temperature" | "co" | "visibility"): Level {
-  if (metric === "temperature") return value >= 60 ? "danger" : value >= 35 ? "watch" : "ok";
-  if (metric === "co") return value >= 1400 ? "danger" : value >= 200 ? "watch" : "ok";
-  return value < 1.5 ? "danger" : value < 8 ? "watch" : "ok";
-}
 
 export default function Lab({
   config,
   onConfig,
   onOpenMethod,
+  onOpenAegis,
 }: {
   config: SimConfig;
   onConfig: (config: SimConfig) => void;
   onOpenMethod: () => void;
+  onOpenAegis: () => void;
 }) {
   const [index, setIndex] = useState(0);
   const [seek, setSeek] = useState(0);
@@ -122,7 +91,6 @@ export default function Lab({
   const [fullscreen, setFullscreen] = useState(false);
   const [jumpEnd, setJumpEnd] = useState(false);
   const isA13 = config.scenario === "apollo13";
-  const [metric, setMetric] = useState<Metric>("temperature");
   const viewport = useRef<HTMLDivElement>(null);
   const clock = useRef<HTMLElement>(null);
   const cursor = useRef(0);
@@ -140,7 +108,6 @@ export default function Lab({
     setSeek((value) => value + 1);
     setRunning(false);
     setJumpEnd(false);
-    setMetric((current) => (config.scenario === "apollo13" ? (["co2", "power", "dose"].includes(current) ? current : "co2") : ["co2", "power"].includes(current) ? "temperature" : current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
   useEffect(() => {
@@ -190,29 +157,6 @@ export default function Lab({
     setFocus(next);
     if (next !== "general") setCutaway(true);
   };
-  const boost = oxygenBoost(config.oxygen, config.pressure);
-
-  const chart = run.frames.slice(0, index + 1).map((f) => {
-    const row: Record<string, number> = { t: isA13 ? f.sinceIncident / 3600 : f.sinceIncident };
-    if (metric === "dose") f.crewStatus.forEach((c, i) => (row[`p${i}`] = c.fed));
-    else if (metric === "co2") row.m2 = f.life?.co2mmHg ?? 0;
-    else if (metric === "power") row.m1 = f.life?.cmBattery ?? 100;
-    else f.modules.forEach((m, i) => (row[`m${i}`] = metric === "temperature" ? m.temperature : metric === "co" ? m.co : m.visibility));
-    return row;
-  });
-  const metrics: Metric[] = isA13 ? ["co2", "power", "dose"] : ["temperature", "co", "visibility", "dose"];
-  const lines =
-    metric === "dose"
-      ? frame.crewStatus.map((c, i) => ({ key: `p${i}`, name: c.role, color: personColors[i] }))
-      : metric === "co2"
-        ? [{ key: "m2", name: "Cabina ocupada", color: moduleColors[1] }]
-        : metric === "power"
-          ? [{ key: "m1", name: "Módulo de mando", color: moduleColors[1] }]
-          : frame.modules.map((m, i) => ({ key: `m${i}`, name: m.name, color: moduleColors[i] }));
-  const first = run.frames[0].sinceIncident;
-  const last = run.frames[DURATION].sinceIncident;
-  const domain: [number, number] = isA13 ? [first / 3600, last / 3600] : [first, last];
-
   return (
     <div className="lab">
       <header className="page-head">
@@ -244,7 +188,7 @@ export default function Lab({
         ))}
       </div>
 
-      <section className="stage-grid">
+      <section aria-label="Vista de la nave">
         <div className="stage" ref={viewport}>
           <div className="stage-bar">
             <div className="stage-title">
@@ -362,107 +306,15 @@ export default function Lab({
           </div>
         </div>
 
-        <aside className="crew-panel" aria-label="Tripulación">
-          <div className="panel-head">
-            <h2>Tripulación</h2>
-            <span className="hint">Dosis acumulada</span>
-          </div>
-          <ol className="crew-list">
-            {frame.crewStatus.map((c, i) => (
-              <li key={c.role} className={cx("person", c.state)}>
-                <div className="person-top">
-                  <span className="swatch" style={{ background: personColors[i] }} />
-                  <strong>{c.role}</strong>
-                  <span className={cx("state", c.state)}>{stateText[c.state]}</span>
-                </div>
-                <div className="dose" role="meter" aria-valuemin={0} aria-valuemax={3} aria-valuenow={c.fed} aria-label={`Dosis ${es(c.fed, 2)}`}>
-                  <i style={{ width: `${Math.min(100, (c.fed / FED_LETHAL) * 100)}%` }} />
-                  <b style={{ left: `${(FED_IMPAIRED / FED_LETHAL) * 100}%` }} />
-                  <b style={{ left: `${(FED_INCAPACITATED / FED_LETHAL) * 100}%` }} />
-                </div>
-                <div className="person-meta">
-                  <span>{frame.modules[Math.min(2, c.module)]?.name}</span>
-                  <span className="mono">{isA13 ? `CO₂ ${es(c.toxic, 2)}` : `calor ${es(c.heat, 2)} · gases ${es(c.toxic, 2)}`}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <div className="dose-scale" aria-hidden>
-            <span style={{ left: 0 }}>0</span>
-            <span style={{ left: `${(FED_IMPAIRED / FED_LETHAL) * 100}%` }}>0,3</span>
-            <span style={{ left: `${(FED_INCAPACITATED / FED_LETHAL) * 100}%` }}>1</span>
-            <span style={{ right: 0 }}>3</span>
-          </div>
-          <p className="hint">0,3 afectado · 1 pierde el conocimiento · 3 dosis letal. Suma el calor, el monóxido de carbono y la falta de oxígeno que ha recibido cada persona.</p>
-        </aside>
       </section>
-
-      <section className="panel environment" aria-label="Ambiente">
-        <div className="panel-head">
-          <h2>{isA13 ? "Soporte vital" : "Ambiente en cada módulo"}</h2>
-          <span className="hint">{isA13 ? "Alarma de CO₂ a 7,5 mmHg · peligro a 15 mmHg" : "Límites: 60 °C · 1400 ppm de CO · 3 m de visibilidad"}</span>
-        </div>
-        {isA13 && frame.life ? (
-          <div className="life-grid">
-            {(
-              [
-                ["CO₂ en la cabina", `${es(frame.life.co2mmHg, 1)} mmHg`, frame.life.co2mmHg >= 15 ? "danger" : frame.life.co2mmHg >= 7.5 ? "watch" : "ok", "Alarma a 7,5 · peligro a 15"],
-                ["Filtros del módulo lunar", `${es(frame.life.liohLeft)} %`, frame.life.liohLeft < 20 ? "danger" : frame.life.liohLeft < 50 ? "watch" : "ok", "Pensados para 2 personas"],
-                ["Baterías de reentrada", `${es(frame.life.cmBattery)} %`, frame.life.cmBattery < 50 ? "danger" : "ok", "Imprescindibles para volver"],
-                ["Baterías del módulo lunar", `${es(frame.life.lmBattery)} %`, frame.life.lmBattery < 20 ? "danger" : "ok", "2181 Ah al empezar"],
-                ["Temperatura de la cabina", `${es(frame.life.cabinTemp)} °C`, frame.life.cabinTemp < 8 ? "watch" : "ok", "Bajó a pocos grados"],
-              ] as const
-            ).map(([label, value, level, note]) => (
-              <div key={label} className={cx("life-cell", level)}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-                <small>{note}</small>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="env-table">
-              <thead>
-                <tr>
-                  <th>Módulo</th>
-                  <th>Temperatura</th>
-                  <th>CO</th>
-                  <th>O₂</th>
-                  <th>Presión</th>
-                  <th>Visibilidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {frame.modules.map((m, i) => (
-                  <tr key={m.id}>
-                    <th>
-                      <span className="swatch" style={{ background: moduleColors[i] }} />
-                      {m.name}
-                      {i === 0 && <em>origen</em>}
-                      {i === 2 && <em>refugio</em>}
-                    </th>
-                    <td className={levelOf(m.temperature, "temperature")}>{es(m.temperature)} °C</td>
-                    <td className={levelOf(m.co, "co")}>{es(m.co)} ppm</td>
-                    <td>{es(m.o2, 1)} %</td>
-                    <td>{es(m.pressure)} kPa</td>
-                    <td className={levelOf(m.visibility, "visibility")}>{m.visibility >= 30 ? "> 30 m" : m.visibility < 1 ? "< 1 m" : `${es(m.visibility)} m`}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {frame.aegis && <AegisDesign design={config.aegisRack} onDesign={(aegisRack) => update({ aegisRack })} telemetry={frame.aegis} />}
 
       <div className="module-references">
         <ScenarioReference scenario={config.scenario} />
+        {config.scenario === "aegis" && <button className="text-button" onClick={onOpenAegis}>Información sobre AEGIS</button>}
         <ReferenceLink url={methodSources.zones} label="NIST · Referencia para el modelo por zonas" />
         <ReferenceLink url={methodSources.exposure} label="ISO · Referencia sobre exposición" />
       </div>
-      <section className="lab-grid">
+      <section className="lab-summary-grid">
         <div className="panel decisions">
           <div className="panel-head">
             <h2>Tus decisiones</h2>
@@ -480,110 +332,6 @@ export default function Lab({
               </span>
             </label>
           ))}
-          {!isA13 && (
-            <>
-              <h3>Atmósfera y entorno</h3>
-              <Slider label="Oxígeno" value={config.oxygen} unit="%" min={15} max={100} step={1} hint="Aire normal: 21 %" onChange={(oxygen) => update({ oxygen })} />
-              <Slider label="Presión" value={config.pressure} unit="kPa" min={30} max={120} step={0.1} hint="Nivel del mar: 101 kPa" onChange={(pressure) => update({ pressure })} />
-              <p className={cx("callout", boost >= 1.6 ? "danger" : boost >= 1.15 ? "watch" : "ok")}>
-                Oxígeno disponible para el fuego: <strong>{es(boost, 1)} ×</strong> el del aire normal.
-              </p>
-              <Slider label="Ventilación" value={config.airflow} unit="m/s" min={0} max={0.5} step={0.01} hint="0 = ventiladores apagados" onChange={(airflow) => update({ airflow })} />
-              <label className="field">
-                Gravedad
-                <select value={config.gravity} onChange={(e) => update({ gravity: Number(e.target.value) })}>
-                  <option value={0}>En órbita (casi 0 g)</option>
-                  <option value={0.16}>Luna (0,16 g)</option>
-                  <option value={0.38}>Marte (0,38 g)</option>
-                  <option value={1}>Tierra (1 g)</option>
-                </select>
-              </label>
-              {config.scenario === "mir" && (
-                <Slider
-                  label="Duración de la vela"
-                  value={(config.candleSeconds ?? 90) / 60}
-                  unit="min"
-                  min={0.5}
-                  max={14}
-                  step={0.5}
-                  hint="1,5 min según el informe · hasta 14 min según la tripulación"
-                  onChange={(minutes) => update({ candleSeconds: minutes * 60 })}
-                />
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="panel chart-panel">
-          <div className="panel-head">
-            <div className="segmented" role="group" aria-label="Variable">
-              {metrics.map((m) => (
-                <button key={m} aria-pressed={metric === m} onClick={() => setMetric(m)}>
-                  {metricInfo[m].label}
-                </button>
-              ))}
-            </div>
-            <button
-              className="text-button"
-              onClick={() =>
-                download(
-                  `orbital-${config.scenario}.csv`,
-                  ["t_s,modulo,temp_C,CO_ppm,O2_pct,CO2_pct,presion_kPa,visibilidad_m"]
-                    .concat(run.frames.flatMap((f) => f.modules.map((m) => [f.sinceIncident, m.name, m.temperature, m.co, m.o2, m.co2, m.pressure, m.visibility].join(","))))
-                    .join("\n"),
-                  "text/csv",
-                )
-              }
-            >
-              <ArrowDownToLine size={14} /> Datos (CSV)
-            </button>
-          </div>
-          <div className="chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chart} margin={{ top: 10, right: 12, bottom: 4, left: -6 }}>
-                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
-                {metricInfo[metric].limit !== undefined && <ReferenceLine y={metricInfo[metric].limit} stroke="var(--danger)" strokeDasharray="5 4" />}
-                {metric === "dose" && <ReferenceArea y1={FED_INCAPACITATED} y2={3.2} fill="var(--danger)" fillOpacity={0.06} />}
-                <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="2 3" />
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={domain}
-                  tickFormatter={(v) => (isA13 ? `${Math.round(v)} h` : `${es(v / 60, Math.abs(domain[1]) < 400 ? 1 : 0)} min`)}
-                  tick={{ fill: "var(--muted)", fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={{ stroke: "var(--line)" }}
-                />
-                <YAxis
-                  tick={{ fill: "var(--muted)", fontSize: 12 }}
-                  tickLine={false}
-                  axisLine={false}
-                  width={54}
-                  domain={metric === "visibility" ? [0, 30] : metric === "dose" ? [0, 3.2] : metric === "power" ? [0, 100] : [0, "auto"]}
-                />
-                <Tooltip
-                  contentStyle={{ border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }}
-                  labelFormatter={(v) => (isA13 ? `T + ${es(Number(v), 1)} h` : `T + ${Math.round(Number(v))} s`)}
-                  formatter={(value, name) => [`${es(Number(value), metric === "dose" ? 2 : 0)} ${metricInfo[metric].unit}`, name]}
-                />
-                {lines.map((l) => (
-                  <Line key={l.key} dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={2} dot={false} isAnimationActive={false} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="legend">
-            {lines.map((l) => (
-              <span key={l.key}>
-                <i style={{ background: l.color }} /> {l.name}
-              </span>
-            ))}
-            {metricInfo[metric].limitLabel && (
-              <span className="limit">
-                <i /> {metricInfo[metric].limitLabel}
-              </span>
-            )}
-          </div>
         </div>
 
         <div className="panel events">
@@ -694,38 +442,5 @@ export default function Lab({
         <CircleHelp size={15} /> {info.interpretation}
       </p>
     </div>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  unit,
-  min,
-  max,
-  step,
-  hint,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  min: number;
-  max: number;
-  step: number;
-  hint: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="slider">
-      <span className="slider-top">
-        {label}
-        <strong>
-          {value.toLocaleString("es", { maximumFractionDigits: 2 })} {unit}
-        </strong>
-      </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
-      <small>{hint}</small>
-    </label>
   );
 }

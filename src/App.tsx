@@ -1,3 +1,4 @@
+import AegisInfo from "./components/AegisInfo";
 import type { ImportedDataset } from "./lib/data-import";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -41,6 +42,7 @@ type Page =
   | "safety"
   | "overview"
   | "lab"
+  | "aegis"
   | "data"
   | "research"
   | "compare"
@@ -54,6 +56,7 @@ const nav = [
   { id: "safety", label: "Panel de seguridad", icon: ShieldCheck, group: "Análisis" },
   { id: "history", label: "Los tres accidentes", icon: BookOpen, group: "Aprender" },
   { id: "lab", label: "Simulador", icon: Orbit, group: "Aprender" },
+  { id: "aegis", label: "Información sobre AEGIS", icon: ShieldCheck, group: "Aprender" },
   { id: "method", label: "Cómo funciona", icon: SlidersHorizontal, group: "Aprender" },
   { id: "research", label: "Investigaciones", icon: FlaskConical, group: "Evidencia" },
   { id: "data", label: "Datos de ensayos", icon: Activity, group: "Evidencia" },
@@ -328,7 +331,12 @@ function App() {
               config={config}
               onConfig={setConfig}
               onOpenMethod={() => navigate("method")}
+              onOpenAegis={() => navigate("aegis")}
             />
+          )}
+
+          {page === "aegis" && (
+            <AegisInfo config={config} onConfig={setConfig} onOpenLab={() => navigate("lab")} />
           )}
 
           {page === "research" && (

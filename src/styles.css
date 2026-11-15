@@ -2529,3 +2529,7 @@ td.danger {
 .scene-diagram li.watch { border-color: #f0a23b; }
 .scene-diagram li.danger { border-color: #ff5a3c; }
 .scene-diagram li strong { color: var(--hud-text); }
+
+.lab-summary-grid { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(0, 2fr); gap: 16px; margin-block: 16px; align-items: start; }
+.lab-summary-grid .event-list { max-height: 340px; }
+@media (max-width: 760px) { .lab-summary-grid { grid-template-columns: minmax(0, 1fr); } }

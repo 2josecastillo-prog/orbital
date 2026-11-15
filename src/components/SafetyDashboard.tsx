@@ -6,7 +6,6 @@ import {
 } from "./ReferenceLink";
 import type { ImportedDataset } from "../lib/data-import";
 import DatasetDashboard from "./DatasetDashboard";
-import AegisDesign from "./AegisDesign";
 import { useMemo, useState } from "react";
 import { ArrowUpRight, ShieldCheck, FileUp } from "lucide-react";
 import { historicalCases } from "../data/research";
@@ -411,13 +410,6 @@ export default function SafetyDashboard({
         </section>
       </div>
       {!importedDataset && <DatasetDashboard imported={null} />}
-      {active.aegis && (
-        <AegisDesign
-          design={config.aegisRack}
-          onDesign={(aegisRack) => onConfig({ ...config, aegisRack })}
-          telemetry={active.aegis}
-        />
-      )}
       {source && (
         <section className="safety-card safety-section">
           <h2>Lección del caso histórico</h2>
