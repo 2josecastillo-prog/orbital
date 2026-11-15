@@ -1,3 +1,4 @@
+import { useReadingMode } from "./lib/use-reading-mode";
 import AegisInfo from "./components/AegisInfo";
 import type { ImportedDataset } from "./lib/data-import";
 import { useEffect, useState, type ReactNode } from "react";
@@ -92,6 +93,7 @@ function App() {
     return nav.some((item) => item.id === hash) ? (hash as Page) : "overview";
   });
   const [importedDataset, setImportedDataset] = useState<ImportedDataset | null>(null);
+  const reading = useReadingMode(page);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todas");
@@ -297,6 +299,9 @@ function App() {
             <strong>{nav.find((item) => item.id === page)?.label}</strong>
           </div>
           <div className="top-actions">
+            <button className="button secondary" aria-pressed={reading.enabled} onClick={reading.toggle}>
+              Lectura por voz
+            </button>
             <button
               className="icon-button"
               title="Buscar investigaciones"
@@ -307,7 +312,8 @@ function App() {
             </button>
           </div>
         </header>
-        <main>
+        <main ref={reading.main}>
+          {reading.notice && <p className="reading-notice" role="status">{reading.notice}</p>}
           {page === "safety" && (
             <SafetyDashboard
               importedDataset={importedDataset}

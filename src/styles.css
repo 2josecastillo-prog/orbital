@@ -2622,3 +2622,6 @@ td.danger {
   .exp-timeline { grid-template-columns: auto auto minmax(0, 1fr); }
   .exp-time { grid-column: 1 / -1; text-align: left; }
 }
+
+.reading-notice { padding: 12px 16px; margin-bottom: 14px; background: var(--flight-soft); border: 1px solid var(--line); border-radius: 12px; }
+.top-actions .button[aria-pressed="true"] { color: white; background: var(--flight); border-color: var(--flight); }
