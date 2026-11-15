@@ -21,6 +21,8 @@
  * All parameters are declared below. This is an educational model: it reproduces
  * documented outcomes and trends, not exact measurements.
  */
+import { aegisParameters, newAegisRack, type AegisTelemetry, type RackDesign } from "./aegis";
+
 export type ScenarioId = "mir" | "apollo1" | "apollo13" | "aegis";
 export type Level = "ok" | "watch" | "danger";
 export type Protection = "isolation" | "suppression" | "backup";
@@ -37,6 +39,7 @@ export interface SimConfig {
   backup: boolean;
   /** Mir only: how long the oxygen candle burns (s). Official 90 s; crew reported up to 14 min. */
   candleSeconds?: number;
+  aegisRack?: RackDesign;
 }
 
 export interface ModuleState {
@@ -93,6 +96,7 @@ export interface SimFrame {
     smJettisoned: boolean;
     lmJettisoned: boolean;
   };
+  aegis?: AegisTelemetry;
   life?: { co2mmHg: number; liohLeft: number; cmBattery: number; lmBattery: number; cabinTemp: number };
 }
 
@@ -223,7 +227,7 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
     year: "Concepto",
     hook: "Una batería de iones de litio se incendia en una nave moderna.",
     description:
-      "Fuga térmica en un paquete de baterías del módulo de servicio: llama intensa y mucho monóxido de carbono. AEGIS aplica las lecciones de los tres accidentes.",
+      "Una falla interna en el módulo de servicio libera calor y gases. La separación de subpaquetes y el enfriamiento limitan la propagación; el aislamiento y el refugio protegen al hábitat.",
     crew: 6,
     roles: ["Técnica en servicio", "Comandante", "Piloto", "Especialista 1", "Especialista 2", "Médica"],
     interpretation:
@@ -232,8 +236,8 @@ export const scenarioInfo: Record<ScenarioId, ScenarioText> = {
     modules: ["Servicio", "Hábitat", "Refugio"],
     hazard: "Fuga térmica de baterías: mucho calor y mucho CO",
     protections: {
-      isolation: { label: "Compuertas automáticas", help: "Se cierran solas cuando el módulo queda vacío o a los 30 s." },
-      suppression: { label: "Agua nebulizada", help: "Niebla fina que enfría las celdas y el aire del módulo." },
+      isolation: { label: "Compuertas automáticas", help: "Corta ventilación compartida al detectar el incidente y cierra la compuerta si la ruta está despejada." },
+      suppression: { label: "Agua nebulizada", help: "Agua de reserva limitada para extraer calor del gabinete y reducir el riesgo de propagación." },
       backup: { label: "Refugio con aire propio", help: "Módulo sellado con oxígeno, filtros y energía independientes." },
     },
     defaults: { oxygen: 21, pressure: 101.3, airflow: 0.12, gravity: 0 },
@@ -314,15 +318,16 @@ function levelFor(m: { temperature: number; co: number; visibility: number; o2Eq
   return "ok";
 }
 
-function clockText(seconds: number, unit: "s" | "h") {
-  const sign = seconds < 0 ? "−" : "+";
-  const s = Math.abs(seconds);
+export function clockText(seconds: number, unit: "s" | "h") {
+  const display = Math.round(seconds / (unit === "h" ? 60 : 1));
+  const sign = display < 0 ? "−" : "+";
+  const total = Math.abs(display);
   if (unit === "h") {
-    const h = Math.floor(s / 3600);
-    const m = Math.round((s % 3600) / 60);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
     return `T ${sign} ${h} h ${String(m).padStart(2, "0")} min`;
   }
-  return `T ${sign} ${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  return `T ${sign} ${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /* ------------------------------------------------------------ fire cases */
@@ -411,6 +416,12 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
   const fc = fireCases[id];
   const isApollo1 = id === "apollo1";
   const isMir = id === "mir";
+  const rack = id === "aegis" ? newAegisRack(config.aegisRack) : null;
+  const refugeSpec = aegisParameters.refuge;
+  let refugeOxygen = refugeSpec.oxygenMol;
+  let refugeScrubber = refugeSpec.scrubberMol;
+  let refugeBattery = refugeSpec.batteryKWh;
+  let rackState = rack?.step(0.25, 295, false, false);
   const oxygen0 = clamp(finite(config.oxygen, 21), 10, 100);
   const pressure0 = clamp(finite(config.pressure, 101.3), 20, 150);
   const airflow = clamp(finite(config.airflow, 0.12), 0, 1);
@@ -483,7 +494,22 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
       const since = t - fc.ignition;
       // ---------------- heat release rate (kW)
       let q = 0;
-      if (since >= 0 && fuelLeft > 0) {
+      const ductsClosed = Boolean(rack && config.isolation && t >= detection);
+      if (rack) {
+        const wasPropagated = rackState?.propagated;
+        rackState = rack.step(dt, z0.T, since >= 0, config.suppression && t >= suppressionTime);
+        if (rackState.propagated && !wasPropagated) event(t, "propagation", "Propagación a subpaquetes vecinos", "El nodo térmico vecino alcanzó el umbral del modelo y comenzó a liberar su propia energía.", "bad");
+        const localFlow = ductsClosed ? Math.min(flow, 0.025) : flow;
+        const oxygenFactor = clamp((ppO2 - 8) / 5, 0, 1);
+        const replenishment = gravity < 0.05 ? clamp(localFlow / 0.12, 0.04, 1) : 1;
+        q = Math.min(rackState.packHeatKW * 0.78 * oxygenFactor * replenishment, fuelLeft / dt);
+        if (rackState.packHeatKW > 0 && replenishment < 0.1 && since > 14) {
+          event(t, "starved", "Llama secundaria limitada", "El flujo reducido limita la llama de los gases; la batería todavía libera calor.", "info");
+        }
+        // Uncalibrated vent-gas source independent of the secondary flame.
+        z0.CO += rackState.packHeatKW * 0.000065 * dt;
+        z0.T += rackState.cabinHeatKW * 1000 * dt / (moles(z0) * CV);
+      } else if (since >= 0 && fuelLeft > 0) {
         if (fc.selfOxidized) {
           const ramp = clamp(since / 5, 0, 1);
           const burnout = since > candle ? Math.exp(-(since - candle) / 6) : 1;
@@ -496,7 +522,6 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
             q *= Math.exp(-Math.max(0, since - 8) / 6);
             if (since > 14 && starvedAt < 0) starvedAt = t;
           }
-          if (id === "aegis" && config.suppression && t >= suppressionTime) q *= Math.exp(-(t - suppressionTime) / 12);
         }
       }
       fuelLeft -= q * dt;
@@ -519,19 +544,16 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
         z.T -= (h * z.A * (z.T - 295) * dt) / (moles(z) * CV);
       }
       if (isMir && config.suppression && t >= suppressionTime) zones[0].T -= (zones[0].T - 295) * 0.02 * dt;
-      if (id === "aegis" && config.suppression && t >= suppressionTime) {
-        zones[0].T -= (zones[0].T - 295) * 0.06 * dt;
-        zones[0].soot *= 1 - 0.01 * dt;
-      }
       // ---------------- hatches and gas exchange
       if (!hatchFireClosed && config.isolation && !isApollo1 && t >= detection + 3) {
         const empty = crew.every((c) => moduleAt(c.s) !== 0 || c.state === "incapacitated" || c.state === "lethal");
-        if (empty || t >= detection + 30) {
+        const clear = rack ? crew.every((c) => c.s >= fc.path[0]) : empty;
+        if (clear || (!rack && t >= detection + 30)) {
           hatchFireClosed = true;
           event(t, "isolation", info.protections.isolation.label, empty ? "Ya no queda nadie dentro: se cierra el módulo del fuego." : "Se cierra por tiempo límite, aunque quede alguien dentro.", empty ? "good" : "bad");
         }
       }
-      const openFlow = fc.hatchArea * (airflow + 0.02) + (gravity > 0.05 ? 0.15 : 0);
+      const openFlow = ductsClosed ? aegisParameters.ductExchangeM3PerS : fc.hatchArea * (airflow + 0.02) + (gravity > 0.05 ? 0.15 : 0);
       if (isApollo1) {
         const p = pressureOf(zones[0]);
         if (!ruptured && p >= 200) {
@@ -551,9 +573,26 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
         exchange(zones[1], zones[2], 0.5, dt);
         if (outside) exchange(zones[2], outside, 0.5, dt);
       } else {
-        exchange(zones[0], zones[1], hatchFireClosed ? 0.0005 : openFlow, dt);
+        exchange(zones[0], zones[1], hatchFireClosed ? aegisParameters.closedLeakM3PerS : openFlow, dt);
         exchange(zones[1], zones[2], refugeSealed ? 0.0003 : openFlow * 0.8, dt);
-        if (refugeSealed && config.backup) {
+        if (rack) {
+          const z = zones[2];
+          const occupants = crew.filter((c) => c.state !== "lethal" && moduleAt(c.s) === 2).length;
+          const oxygen = Math.min(z.O2, occupants * refugeSpec.oxygenMolPerPersonSecond * dt);
+          z.O2 -= oxygen;
+          z.CO2 += occupants * refugeSpec.co2MolPerPersonSecond * dt;
+          if (refugeSealed && refugeBattery > 0) {
+            const dose = Math.min(oxygen, refugeOxygen);
+            z.O2 += dose;
+            refugeOxygen -= dose;
+            const captured = Math.min(Math.max(0, z.CO2 - moles(z) * 0.00042) * 0.04 * dt, refugeScrubber);
+            z.CO2 -= captured;
+            refugeScrubber -= captured;
+            z.CO *= 1 - 0.02 * dt;
+            z.soot *= 1 - 0.03 * dt;
+            refugeBattery = Math.max(0, refugeBattery - refugeSpec.loadKW * dt / 3600);
+          }
+        } else if (refugeSealed && config.backup) {
           const z = zones[2];
           z.CO *= 1 - 0.02 * dt;
           z.soot *= 1 - 0.03 * dt;
@@ -578,10 +617,10 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
           toxicFactor = !ruptured && T < 260 ? 0 : 1;
           heatFactor = 0.5;
         }
-        if (m === 2 && refugeSealed && config.backup) toxicFactor *= 0.2;
+        if (!rack && m === 2 && refugeSealed && config.backup) toxicFactor *= 0.2;
         const dtMin = dt / 60;
         c.heat += (dtMin / heatTime(T)) * heatFactor;
-        c.toxic += ((ppm * dtMin) / 35000 + dtMin / hypoxiaTime(o2Eq)) * toxicFactor;
+        c.toxic += ((ppm * dtMin) / 35000 + dtMin / hypoxiaTime(o2Eq) + (rack ? dtMin / co2Time((z.CO2 / n) * 100) : 0)) * toxicFactor;
         c.fed = c.heat + c.toxic;
         const cause = c.heat > c.toxic ? "calor" : "gases tóxicos";
         if (c.fed >= FED_LETHAL) {
@@ -615,7 +654,7 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
           const goal = config.backup && seat ? pathTotal : fc.path[0] + (isMir ? fc.path[1] * 0.55 : 2);
           if (shouldGo && c.s < goal) c.s = Math.min(goal, c.s + speed * dt);
         }
-        if (c.s >= pathTotal - 0.01 && c.state === "ok") c.state = "safe";
+        if (c.s >= pathTotal - 0.01 && c.state === "ok" && (!rack || refugeSealed)) c.state = "safe";
       }
       if (!isApollo1 && config.backup && !refugeSealed) {
         const mobile = crew.filter((c, i) => c.state !== "incapacitated" && c.state !== "lethal" && (!isMir || [1, 2, 3].includes(i)));
@@ -636,13 +675,14 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
           ? "Al encender una vela de oxígeno en Kvant-1, arde como un soplete: un metro de llama, chispas y metal fundido."
           : isApollo1
             ? "Un cable dañado hace chispa. Con oxígeno puro a 115 kPa, las redes de nailon y el velcro arden enseguida."
-            : "Una celda se sobrecalienta y contagia a las vecinas. Sale una llama intensa con mucho monóxido de carbono.",
+            : "Una falla interna inicia la liberación de calor y gases. El modelo calcula si el calor se transmite al grupo vecino.",
         "bad",
       );
-    if (tEnd >= detection) event(detection, "detection", isApollo1 ? "«¡Fuego!»" : "Alarma", isApollo1 ? "La tripulación avisa por radio. Siguen atados a sus asientos." : isMir ? "La tripulación ve la llama y da la alarma." : "Los detectores de humo avisan a toda la nave.");
+    if (tEnd >= detection) event(detection, "detection", isApollo1 ? "«¡Fuego!»" : "Alarma", isApollo1 ? "La tripulación avisa por radio. Siguen atados a sus asientos." : isMir ? "La tripulación ve la llama y da la alarma." : "La alarma dispara el corte eléctrico y, si está habilitado, el aislamiento de los conductos.");
+    if (rack && tEnd >= detection) event(detection, "feed-cut", "Alimentación de batería interrumpida", "El contactor abre el circuito externo. Una reacción interna ya iniciada puede continuar.");
     if (isMir && config.suppression && tEnd >= masksOn) event(masksOn, "masks", "Respiradores puestos", "Cada persona respira el oxígeno de su máscara: los gases ya no le afectan, el calor sí.", "good");
     if (isMir && config.suppression && tEnd >= suppressionTime) event(suppressionTime, "extinguish", "Extintores", "Enfrían las paredes. La vela sigue ardiendo: fabrica su propio oxígeno.");
-    if (id === "aegis" && config.suppression && tEnd >= suppressionTime) event(suppressionTime, "mist", "Agua nebulizada", "La niebla enfría las celdas y el aire del módulo de servicio.", "good");
+    if (id === "aegis" && config.suppression && tEnd >= suppressionTime) event(suppressionTime, "mist", "Enfriamiento del gabinete habilitado", "El sistema extrae calor con una reserva finita. Una reacción interna ya iniciada puede continuar.", "info");
     if (isMir && since > candle + 12) event(fc.ignition + candle + 12, "burnout", "La vela se consume", "Se agota la carga y la llama se apaga sola. El humo seguirá mucho tiempo.", "good");
     if (starvedAt >= 0) event(starvedAt, "starved", "La llama se ahoga", "Sin gravedad, el aire caliente no sube. Con la ventilación casi parada no llega oxígeno nuevo y la llama se apaga sola.", "good");
     if (isApollo1 && tEnd >= hatchOpenTime)
@@ -707,7 +747,7 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
       time: tEnd,
       clock: clockText(tEnd - fc.ignition, "s"),
       sinceIncident: tEnd - fc.ignition,
-      phase: since < 0 ? "Antes del incidente" : ruptured ? "Casco roto" : hrr > 1 ? "Fuego activo" : "Sin llama",
+      phase: since < 0 ? "Antes del incidente" : ruptured ? "Casco roto" : hrr > 1 ? "Fuego activo" : rackState && rackState.packHeatKW > 0 ? "Fuga térmica sin llama visible" : "Sin llama",
       level,
       narrative,
       hrr: Math.round(hrr),
@@ -717,7 +757,13 @@ function runFire(config: SimConfig): { frames: SimFrame[]; events: SimEvent[] } 
       oxygen: m0.o2,
       smoke: modules[1].smoke,
       energy: 100,
-      refuge: safe,
+      aegis: rackState ? {
+        ...rackState, feedCut: tEnd >= detection, ductsClosed: config.isolation && tEnd >= detection,
+        refugeBatteryPercent: 100 * refugeBattery / refugeSpec.batteryKWh,
+        refugeOxygenPercent: 100 * refugeOxygen / refugeSpec.oxygenMol,
+        refugeScrubberPercent: 100 * refugeScrubber / refugeSpec.scrubberMol,
+      } : undefined,
+      refuge: rack ? crew.filter((c) => c.s >= pathTotal - 0.01 && c.state !== "lethal").length : safe,
       crew: crewStatus.map((c) => c.position),
       crewStatus,
       modules,
@@ -949,6 +995,15 @@ function summarize(config: SimConfig, frames: SimFrame[], events: SimEvent[]): S
     peaks.push({ label: "Temperatura máxima", value: `${Math.round(peakT)} °C`, limit: "60 °C", exceeded: peakT >= 60 });
     peaks.push({ label: "CO máximo", value: `${peakCo.toLocaleString("es")} ppm`, limit: "1400 ppm", exceeded: peakCo >= 1400 });
     peaks.push({ label: `Visibilidad mínima en ${info.modules[1]}`, value: minVis < 1 ? "< 1 m" : `${Math.round(minVis)} m`, limit: "3 m", exceeded: minVis < 3 });
+    if (config.scenario === "aegis") {
+      const peak = Math.max(...frames.map((frame) => frame.aegis?.neighborC ?? 0));
+      peaks.push({
+        label: "Temperatura máxima del subpaquete vecino",
+        value: `${Math.round(peak)} °C`,
+        limit: `${aegisParameters.propagationC} °C`,
+        exceeded: last.aegis?.propagated ?? false,
+      });
+    }
     if (config.scenario === "apollo1") peaks.push({ label: "Presión máxima", value: `${Math.round(peakP)} kPa`, limit: "≈ 200 kPa (rotura)", exceeded: peakP >= 195 });
     const boost = oxygenBoost(config.oxygen, config.pressure);
     if (config.scenario === "apollo1") {
@@ -961,10 +1016,10 @@ function summarize(config: SimConfig, frames: SimFrame[], events: SimEvent[]): S
       factors.push(config.suppression ? { good: true, text: "Los respiradores protegieron de los gases durante el humo denso." } : { good: false, text: "Sin respiradores, todos respiran el humo de la vela." });
       factors.push(config.backup ? { good: true, text: "La Soyuz libre se preparó, pero solo caben 3: los otros 3 dependían de la nave bloqueada por el fuego." } : { good: false, text: "Sin preparar la Soyuz libre, nadie tenía salida si el fuego seguía." });
     } else {
-      factors.push(config.isolation ? { good: true, text: "Las compuertas encerraron el humo en el módulo de servicio." } : { good: false, text: "Con las compuertas abiertas, la ventilación llevó el CO al hábitat." });
-      factors.push(config.suppression ? { good: true, text: "El agua nebulizada enfrió las celdas y frenó la fuga térmica." } : { good: false, text: "Sin enfriar las celdas, la fuga térmica siguió hasta agotar el paquete." });
+      factors.push(config.isolation ? { good: true, text: "Se limitó el intercambio de aire entre servicio y hábitat al activar el aislamiento." } : { good: false, text: "Con las compuertas abiertas, la ventilación llevó el CO al hábitat." });
+      factors.push(config.suppression ? { good: true, text: "El agua extrajo calor dentro del límite de la reserva." } : { good: false, text: "El enfriamiento activo del gabinete estaba deshabilitado." });
       factors.push(config.backup ? { good: true, text: "El refugio con aire propio mantuvo a salvo a quien llegó." } : { good: false, text: "Sin refugio sellado, no había aire limpio al que ir." });
-      if (events.some((e) => e.kind === "starved")) factors.push({ good: true, text: "Con la ventilación parada, la llama se quedó sin oxígeno." });
+      if (events.some((e) => e.kind === "starved")) factors.push({ good: true, text: "El bajo flujo redujo la llama secundaria; la batería conservó su fuente interna de calor." });
     }
   }
   const worst = people.find((p) => p.state === "lethal") ?? people.find((p) => p.state === "incapacitated");
@@ -974,7 +1029,7 @@ function summarize(config: SimConfig, frames: SimFrame[], events: SimEvent[]): S
       ? "Vuelven a casa tras 87 h en el bote salvavidas, como en 1970."
       : config.scenario === "mir"
         ? "Como en 1997, todos sobreviven. El mayor riesgo fue quedarse sin salida."
-        : "El diseño contiene el fuego y nadie recibe una dosis peligrosa.";
+        : "La simulación termina sin incapacitación. Consulta la dosis por tripulante y el estado de las barreras.";
   return { level, title, summary, safe, incapacitated, lethal, crew: info.crew, people, factors: factors.slice(0, 5), peaks };
 }
 
@@ -987,6 +1042,7 @@ export function whatIfs(config: SimConfig): WhatIf[] {
     change: { [key]: !config[key] },
   }));
   if (config.scenario === "apollo1" && config.oxygen > 70) variants.push({ label: "Atmósfera de 60 % O₂ y 40 % N₂", change: { oxygen: 60, pressure: 101.3 } });
+  if (config.scenario === "aegis") variants.push({ label: "Cambiar separación del paquete", change: { aegisRack: config.aegisRack === "shared" ? "separated" : "shared" } });
   if (config.scenario === "aegis" && config.airflow > 0.02) variants.push({ label: "Apagar la ventilación", change: { airflow: 0 } });
   return variants.map(({ label, change }) => {
     const outcome = runSimulation({ ...config, ...change }).outcome;
@@ -995,5 +1051,10 @@ export function whatIfs(config: SimConfig): WhatIf[] {
 }
 
 export function historicalConfig(scenario: ScenarioId): SimConfig {
-  return { scenario, ...scenarioInfo[scenario].defaults, ...scenarioInfo[scenario].historical };
+  return {
+    scenario,
+    ...scenarioInfo[scenario].defaults,
+    ...scenarioInfo[scenario].historical,
+    ...(scenario === "aegis" ? { aegisRack: "separated" } : {}),
+  };
 }

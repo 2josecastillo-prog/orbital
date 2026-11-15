@@ -1,8 +1,9 @@
+import { ScenarioReference } from "./ReferenceLink";
 import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { historicalConfig, runSimulation, scenarioInfo, type ScenarioId } from "../lib/simulation";
 
-type Go = (page: "lab" | "history" | "method" | "research") => void;
+type Go = (page: "safety" | "data" | "lab" | "history" | "method" | "research") => void;
 
 /** Home: the point of the project in one screen, for anyone, with a path for analysts. */
 export default function Overview({ go, openCase }: { go: Go; openCase: (id: ScenarioId) => void }) {
@@ -20,7 +21,7 @@ export default function Overview({ go, openCase }: { go: Go; openCase: (id: Scen
       <section className="home-hero">
         <div className="home-hero-copy">
           <p className="kicker">Seguridad contra incendios en naves espaciales</p>
-          <h1>En una nave no hay a dónde huir del fuego.</h1>
+          <h1>Orbital Fire Lab</h1>
           <p className="lead">
             Sin gravedad la llama es redonda y el humo no sube. En una cabina sellada una chispa se convierte en un incendio
             en segundos. Este laboratorio reconstruye con física tres accidentes reales para entender por qué murieron o
@@ -30,8 +31,11 @@ export default function Overview({ go, openCase }: { go: Go; openCase: (id: Scen
             <button className="button primary large" onClick={() => go("lab")}>
               Abrir el simulador <ArrowRight size={18} />
             </button>
-            <button className="button secondary large" onClick={() => go("history")}>
-              Conocer los accidentes
+            <button className="button secondary large" onClick={() => go("safety")}>
+              Abrir panel de seguridad
+            </button>
+            <button className="button secondary large" onClick={() => go("data")}>
+              Explorar datos de ensayos
             </button>
           </div>
         </div>
@@ -61,6 +65,7 @@ export default function Overview({ go, openCase }: { go: Go; openCase: (id: Scen
               <h2>{info.title}</h2>
             </header>
             <p>{info.hook}</p>
+            <ScenarioReference scenario={id} />
             <div className="case-outcome">
               <strong>
                 {outcome.safe}/{outcome.crew}

@@ -1,3 +1,4 @@
+import { ReferenceLink, ScenarioReference, methodSources } from "./ReferenceLink";
 import { useMemo } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
 import { apollo13Model, fireCases, historicalConfig, runSimulation, scenarioInfo } from "../lib/simulation";
@@ -215,11 +216,11 @@ export default function Method({ onOpenLab }: { onOpenLab: () => void }) {
       <section className="panel refs">
         <h2>Referencias del método</h2>
         <ul className="plain">
-          <li>ISO 13571:2012 · Componentes letales del fuego. Estimación del tiempo hasta condiciones insostenibles.</li>
+          <li><ReferenceLink url={methodSources.exposure} label="ISO 13571:2012 · Exposición a gases, humo y calor" /></li>
           <li>Purser, D. A. · Modelos de dosis efectiva fraccional para calor, CO, hipoxia y CO₂ (SFPE Handbook).</li>
-          <li>NIST CFAST · Modelo de incendios por zonas en compartimentos.</li>
+          <li><ReferenceLink url={methodSources.zones} label="NIST CFAST · Modelo de incendios por zonas" /></li>
           <li>NFPA 72 · Curvas de crecimiento t²: media α = 0,012 y rápida α = 0,047 kW/s². Apollo 1 usa 0,017 en aire, escalado por el oxígeno.</li>
-          <li>Informes de la NASA sobre Apollo 1, Apollo 13 y el incendio de la Mir.</li>
+          <li><div className="module-references"><ScenarioReference scenario="apollo1" /><ScenarioReference scenario="apollo13" /><ScenarioReference scenario="mir" /></div></li>
         </ul>
       </section>
     </div>

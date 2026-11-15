@@ -1,3 +1,5 @@
+import { ScenarioReference, ReferenceLink, methodSources } from "./ReferenceLink";
+import AegisDesign from "./AegisDesign";
 import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
@@ -24,6 +26,7 @@ import {
   FED_IMPAIRED,
   FED_INCAPACITATED,
   FED_LETHAL,
+  clockText,
   historicalConfig,
   oxygenBoost,
   runSimulation,
@@ -78,8 +81,8 @@ const metricInfo: Record<Metric, { label: string; unit: string; limit?: number; 
   co2: { label: "CO₂ en la cabina", unit: "mmHg", limit: 15, limitLabel: "15 mmHg: síntomas graves" },
   power: { label: "Baterías de reentrada", unit: "%", limit: 50, limitLabel: "50 %: mínimo para volver" },
 };
-const moduleColors = ["#e8501c", "#2457d6", "#1e8e5a"];
-const personColors = ["#e8501c", "#2457d6", "#1e8e5a", "#b07d00", "#7a4fd6", "#c2185b"];
+const moduleColors = ["var(--flight-forest)", "var(--chart-mint)", "var(--chart-teal)"];
+const personColors = ["var(--flight-forest)", "var(--chart-mint)", "var(--chart-teal)", "#8e682e", "#756086", "#97566b"];
 
 function levelOf(value: number, metric: "temperature" | "co" | "visibility"): Level {
   if (metric === "temperature") return value >= 60 ? "danger" : value >= 35 ? "watch" : "ok";
@@ -97,6 +100,7 @@ export default function Lab({
   onOpenMethod: () => void;
 }) {
   const [index, setIndex] = useState(0);
+  const [seek, setSeek] = useState(0);
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(2);
   const [cutaway, setCutaway] = useState(true);
@@ -107,6 +111,8 @@ export default function Lab({
   const isA13 = config.scenario === "apollo13";
   const [metric, setMetric] = useState<Metric>("temperature");
   const viewport = useRef<HTMLDivElement>(null);
+  const clock = useRef<HTMLElement>(null);
+  const cursor = useRef(0);
 
   const run = useMemo(() => runSimulation(config), [config]);
   const alternatives = useMemo(() => whatIfs(config), [config]);
@@ -116,7 +122,9 @@ export default function Lab({
   const past = run.events.filter((e) => e.index <= index);
 
   useEffect(() => {
-    setIndex(jumpEnd ? DURATION : 0);
+    cursor.current = jumpEnd ? DURATION : 0;
+    setIndex(cursor.current);
+    setSeek((value) => value + 1);
     setRunning(false);
     setJumpEnd(false);
     setMetric((current) => (config.scenario === "apollo13" ? (["co2", "power", "dose"].includes(current) ? current : "co2") : ["co2", "power"].includes(current) ? "temperature" : current));
@@ -124,17 +132,34 @@ export default function Lab({
   }, [config]);
   useEffect(() => {
     if (!running) return;
-    const timer = setInterval(() => {
-      setIndex((i) => {
-        if (i >= DURATION) {
-          setRunning(false);
-          return DURATION;
-        }
-        return i + 1;
-      });
-    }, 1000 / (speed * 2));
-    return () => clearInterval(timer);
-  }, [running, speed]);
+    let previous: number | undefined;
+    let request: number;
+    const tick = (now: number) => {
+      // Ignore time spent in a background tab rather than skipping mission events.
+      const elapsed = previous === undefined ? 0 : Math.min(now - previous, 100);
+      previous = now;
+      const previousSample = Math.floor(cursor.current);
+      cursor.current = Math.min(DURATION, cursor.current + elapsed * speed / 500);
+      const sample = Math.floor(cursor.current);
+      if (sample !== previousSample) setIndex(sample);
+      if (isA13 && clock.current) {
+        const from = run.frames[sample].sinceIncident;
+        const to = run.frames[Math.min(sample + 1, DURATION)].sinceIncident;
+        const label = clockText(from + (to - from) * (cursor.current - sample), "h");
+        if (clock.current.textContent !== label) clock.current.textContent = label;
+      }
+      if (sample < DURATION) request = requestAnimationFrame(tick);
+      else setRunning(false);
+    };
+    request = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(request);
+  }, [running, speed, run, isA13]);
+  useEffect(() => {
+    if (isA13 && !running && clock.current) {
+      const next = run.frames[Math.min(index + 1, DURATION)];
+      clock.current.textContent = clockText(frame.sinceIncident + (next.sinceIncident - frame.sinceIncident) * (cursor.current - index), "h");
+    }
+  }, [isA13, running, index, frame, run, seek]);
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === viewport.current);
     document.addEventListener("fullscreenchange", onChange);
@@ -144,7 +169,9 @@ export default function Lab({
   const update = (change: Partial<SimConfig>) => onConfig({ ...config, ...change });
   const go = (i: number) => {
     setRunning(false);
-    setIndex(Math.max(0, Math.min(DURATION, i)));
+    cursor.current = Math.max(0, Math.min(DURATION, i));
+    setIndex(cursor.current);
+    setSeek((value) => value + 1);
   };
   const chooseFocus = (next: CameraFocus) => {
     setFocus(next);
@@ -213,7 +240,7 @@ export default function Lab({
               <span>{frame.phase}</span>
             </div>
             <div className="stage-tools">
-              <div className="segmented dark" role="group" aria-label="Cámara">
+              <div className="segmented" role="group" aria-label="Cámara">
                 {(
                   [
                     ["general", "General", Scan],
@@ -260,11 +287,11 @@ export default function Lab({
                   </div>
                 }
               >
-                <Spacecraft key={cameraReset} scenario={config.scenario} frame={frame} cutaway={cutaway} config={config} focus={focus} />
+                <Spacecraft key={cameraReset} scenario={config.scenario} frame={frame} cutaway={cutaway} config={config} focus={focus} seek={seek} />
               </Suspense>
             </SceneBoundary>
             <div className="hud-clock">
-              <strong>{frame.clock}</strong>
+              {isA13 ? <strong ref={clock} /> : <strong>{frame.clock}</strong>}
               {!isA13 && frame.sinceIncident >= 0 && <span>Potencia del fuego {es(frame.hrr)} kW</span>}
               {isA13 && frame.life && <span>CO₂ {es(frame.life.co2mmHg, 1)} mmHg</span>}
             </div>
@@ -280,7 +307,11 @@ export default function Lab({
               className="play"
               aria-label={running ? "Pausar" : "Reproducir"}
               onClick={() => {
-                if (index >= DURATION) setIndex(0);
+                if (index >= DURATION) {
+                  cursor.current = 0;
+                  setIndex(0);
+                  setSeek((value) => value + 1);
+                }
                 setRunning((v) => !v);
               }}
             >
@@ -405,12 +436,19 @@ export default function Lab({
         )}
       </section>
 
+      {frame.aegis && <AegisDesign design={config.aegisRack} onDesign={(aegisRack) => update({ aegisRack })} telemetry={frame.aegis} />}
+
+      <div className="module-references">
+        <ScenarioReference scenario={config.scenario} />
+        <ReferenceLink url={methodSources.zones} label="NIST · Referencia para el modelo por zonas" />
+        <ReferenceLink url={methodSources.exposure} label="ISO · Referencia sobre exposición" />
+      </div>
       <section className="lab-grid">
         <div className="panel decisions">
           <div className="panel-head">
             <h2>Tus decisiones</h2>
             <button className="text-button" onClick={() => onConfig(historicalConfig(config.scenario))}>
-              <Undo2 size={14} /> Como en la historia
+              <Undo2 size={14} /> {config.scenario === "aegis" ? "Restaurar diseño" : "Como en la historia"}
             </button>
           </div>
           {(["isolation", "suppression", "backup"] as Protection[]).map((key) => (
@@ -484,28 +522,28 @@ export default function Lab({
           <div className="chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chart} margin={{ top: 10, right: 12, bottom: 4, left: -6 }}>
-                <CartesianGrid stroke="#e3e8ee" vertical={false} />
-                {metricInfo[metric].limit !== undefined && <ReferenceLine y={metricInfo[metric].limit} stroke="#e8501c" strokeDasharray="5 4" />}
-                {metric === "dose" && <ReferenceArea y1={FED_INCAPACITATED} y2={3.2} fill="#e8501c" fillOpacity={0.06} />}
-                <ReferenceLine x={0} stroke="#93a1b0" strokeDasharray="2 3" />
+                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+                {metricInfo[metric].limit !== undefined && <ReferenceLine y={metricInfo[metric].limit} stroke="var(--danger)" strokeDasharray="5 4" />}
+                {metric === "dose" && <ReferenceArea y1={FED_INCAPACITATED} y2={3.2} fill="var(--danger)" fillOpacity={0.06} />}
+                <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="2 3" />
                 <XAxis
                   dataKey="t"
                   type="number"
                   domain={domain}
                   tickFormatter={(v) => (isA13 ? `${Math.round(v)} h` : `${es(v / 60, Math.abs(domain[1]) < 400 ? 1 : 0)} min`)}
-                  tick={{ fill: "#5b6878", fontSize: 12 }}
+                  tick={{ fill: "var(--muted)", fontSize: 12 }}
                   tickLine={false}
-                  axisLine={{ stroke: "#cfd6de" }}
+                  axisLine={{ stroke: "var(--line)" }}
                 />
                 <YAxis
-                  tick={{ fill: "#5b6878", fontSize: 12 }}
+                  tick={{ fill: "var(--muted)", fontSize: 12 }}
                   tickLine={false}
                   axisLine={false}
                   width={54}
                   domain={metric === "visibility" ? [0, 30] : metric === "dose" ? [0, 3.2] : metric === "power" ? [0, 100] : [0, "auto"]}
                 />
                 <Tooltip
-                  contentStyle={{ border: "1px solid #d6dce3", borderRadius: 8, fontSize: 13 }}
+                  contentStyle={{ border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }}
                   labelFormatter={(v) => (isA13 ? `T + ${es(Number(v), 1)} h` : `T + ${Math.round(Number(v))} s`)}
                   formatter={(value, name) => [`${es(Number(value), metric === "dose" ? 2 : 0)} ${metricInfo[metric].unit}`, name]}
                 />

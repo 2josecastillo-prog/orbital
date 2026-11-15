@@ -74,8 +74,29 @@ assert.equal(runSimulation({ ...historicalConfig("apollo13"), suppression: false
 
 const aegis = runSimulation(historicalConfig("aegis"));
 assert.equal(aegis.outcome.lethal + aegis.outcome.incapacitated, 0, "AEGIS design protects the crew");
-const bare = runSimulation({ ...historicalConfig("aegis"), isolation: false, suppression: false, backup: false });
-assert.ok(bare.outcome.lethal + bare.outcome.incapacitated > 0, "AEGIS without protections harms the crew");
+const aegisBase = historicalConfig("aegis");
+const unprotected = { ...aegisBase, isolation: false, suppression: false, backup: false };
+const bare = runSimulation({ ...unprotected, aegisRack: "shared" });
+const passiveOnly = runSimulation(unprotected);
+assert.equal(aegis.frames.at(-1).aegis.propagated, false);
+assert.equal(passiveOnly.frames.at(-1).aegis.propagated, false);
+assert.equal(bare.frames.at(-1).aegis.propagated, true, "shared rack can propagate");
+assert.ok(bare.events.some((event) => event.kind === "propagation"));
+assert.ok(Math.max(...bare.frames.map((frame) => frame.modules[1].co)) >
+  Math.max(...passiveOnly.frames.map((frame) => frame.modules[1].co)),
+  "propagation raises peak exposure in the habitat");
+assert.ok(aegis.frames.some((frame) => frame.aegis.feedCut && frame.aegis.packHeatKW > 0),
+  "opening the contactor does not end active thermal runaway");
+assert.ok(aegis.frames.at(-1).aegis.waterKG < aegis.frames[0].aegis.waterKG);
+assert.equal(passiveOnly.frames.at(-1).aegis.waterKG, passiveOnly.frames[0].aegis.waterKG);
+assert.ok(aegis.frames.at(-1).aegis.refugeBatteryPercent < 100);
+assert.equal(passiveOnly.frames.at(-1).aegis.refugeBatteryPercent, 100);
+for (const { aegis: systems } of aegis.frames) {
+  assert.ok(systems.waterKG >= 0 && systems.waterKG <= 5);
+  for (const reserve of [systems.refugeBatteryPercent, systems.refugeOxygenPercent, systems.refugeScrubberPercent]) {
+    assert.ok(Number.isFinite(reserve) && reserve >= 0 && reserve <= 100);
+  }
+}
 assert.ok(runSimulation({ ...historicalConfig("aegis"), airflow: 0, isolation: false, suppression: false, backup: false }).events.some((e) => e.kind === "starved"), "microgravity flame starves without airflow");
 
 // ---- 4. No one survives extreme heat

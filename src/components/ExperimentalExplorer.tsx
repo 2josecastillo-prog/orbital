@@ -1,5 +1,6 @@
+import { ReferenceLink } from "./ReferenceLink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Papa from "papaparse";
+import { parseDataTable, type DataRow as Row, type ImportedDataset } from "../lib/data-import";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -19,8 +20,6 @@ import {
   YAxis,
 } from "recharts";
 import { investigations } from "../data/research";
-
-type Row = Record<string, string>;
 
 // Plain Spanish names for the most common PSI column headers.
 const glossary: [RegExp, string][] = [
@@ -79,8 +78,12 @@ const numeric = (value: unknown) =>
   value.trim() !== "" &&
   Number.isFinite(Number(value));
 
-export default function ExperimentalExplorer() {
+export default function ExperimentalExplorer({ onImport, onOpenDashboard }: {
+  onImport: (dataset: ImportedDataset) => void;
+  onOpenDashboard: () => void;
+}) {
   const [dataset, setDataset] = useState("PSI-25");
+  const [reload, setReload] = useState(0);
   const [rows, setRows] = useState<Row[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [x, setX] = useState("");
@@ -122,28 +125,14 @@ export default function ExperimentalExplorer() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / 20));
   const displayed = filtered.slice(page * 20, page * 20 + 20);
 
-  function parse(text: string, title: string, local = false) {
-    const result = Papa.parse<Row>(text, {
-      header: true,
-      skipEmptyLines: "greedy",
-      transformHeader: (header) => header.trim(),
-    });
-    const fields = result.meta.fields || [];
-    if (result.errors.length || fields.length < 2 || !result.data.length) {
-      setError(
-        "La tabla no se pudo interpretar. Revisa los encabezados, las comillas y el separador del CSV.",
-      );
-      setRows([]);
-      setHeaders([]);
-      return;
-    }
-    const columns = fields.filter((field) =>
-      result.data.some((row) => numeric(row[field])),
-    );
-    setRows(result.data);
-    setHeaders(fields);
+  function parse(text: string, title: string, local = false, format: "csv" | "tsv" | "json" = "csv") {
+    const { rows, headers } = parseDataTable(text, format);
+    const columns = headers.filter((field) => rows.some((row) => numeric(row[field])));
+    setRows(rows);
+    setHeaders(headers);
     setName(title);
     setImported(local);
+    if (local) onImport({ rows, headers, name: title });
     setPage(0);
     setQuery("");
     setError("");
@@ -179,7 +168,7 @@ export default function ExperimentalExplorer() {
         if (id === requestId.current) setLoading(false);
       });
     return () => controller.abort();
-  }, [study]);
+  }, [study, reload]);
 
   return (
     <>
@@ -197,13 +186,15 @@ export default function ExperimentalExplorer() {
           <label className="select-label">
             Investigación
             <select
-              value={dataset}
+              value={imported ? "" : dataset}
               onChange={(event) => {
                 setDataset(event.target.value);
+                if (event.target.value === dataset) setReload((count) => count + 1);
                 setImported(false);
               }}
               aria-label="Seleccionar dataset"
             >
+              {imported && <option value="" disabled>Archivo importado</option>}
               {investigations.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.name} · {item.id}
@@ -214,6 +205,7 @@ export default function ExperimentalExplorer() {
         </div>
         <div className="dataset-description">
           <h3>{imported ? name : study.fullName}</h3>
+          {!imported && <ReferenceLink url={study.sourceUrl} label="NASA PSI · Ficha de la investigación" />}
           <p>
             {imported
               ? "Archivo local. Verifica las unidades y la procedencia antes de interpretar los resultados."
@@ -224,35 +216,44 @@ export default function ExperimentalExplorer() {
           </span>
         </div>
         <div className="dataset-actions">
-          <a className="button secondary" href={study.resourceUrl} download>
+          {!imported && <a className="button secondary" href={study.resourceUrl} download>
             <ArrowDownToLine size={15} /> Descargar CSV NASA
-          </a>
+          </a>}
           <label className="button secondary file-label">
-            <FileUp size={15} /> Importar CSV
+            <FileUp size={15} /> Importar datos
             <input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json"
+              aria-describedby="import-formats"
               onChange={async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
+                event.target.value = "";
+                const format = file.name.split(".").pop()?.toLowerCase();
+                if (format !== "csv" && format !== "tsv" && format !== "json") {
+                  setError("Selecciona un archivo CSV, TSV o JSON.");
+                  return;
+                }
                 if (file.size > 10_000_000) {
                   setError("El tamaño máximo por archivo es 10 MB.");
                   return;
                 }
                 const id = ++requestId.current;
+                setError("");
                 setLoading(true);
                 try {
                   const text = await file.text();
-                  if (id === requestId.current) parse(text, file.name, true);
-                } catch {
-                  setError("No se pudo leer el archivo.");
+                  if (id === requestId.current) parse(text, file.name, true, format);
+                } catch (reason) {
+                  if (id === requestId.current) setError(reason instanceof Error ? reason.message : "No se pudo leer el archivo.");
                 } finally {
                   if (id === requestId.current) setLoading(false);
                 }
-                event.target.value = "";
               }}
             />
           </label>
+          {imported && <button className="button secondary" onClick={onOpenDashboard}>Ver en el panel de seguridad</button>}
+          <p id="import-formats" className="hint">CSV, TSV o JSON · hasta 10 MB</p>
         </div>
       </section>
       {error && (
@@ -274,7 +275,7 @@ export default function ExperimentalExplorer() {
                   <h2>{name}</h2>
                 </div>
                 <span className="tag lime">
-                  {rows.length} registros originales
+                  {rows.length} {imported ? "registros importados" : "registros originales"}
                 </span>
               </div>
               {numericHeaders.length >= 2 ? (
@@ -314,17 +315,17 @@ export default function ExperimentalExplorer() {
                       <ScatterChart
                         margin={{ top: 25, right: 25, bottom: 35, left: 25 }}
                       >
-                        <CartesianGrid stroke="#273b47" strokeDasharray="3 5" />
+                        <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" />
                         <XAxis
                           type="number"
                           dataKey="x"
                           name={x}
                           domain={["auto", "auto"]}
-                          tick={{ fill: "#9aaeb9", fontSize: 11 }}
+                          tick={{ fill: "var(--muted)", fontSize: 11 }}
                           label={{
                             value: plainColumn(x),
                             position: "bottom",
-                            fill: "#b0c5ce",
+                            fill: "var(--muted)",
                             fontSize: 10,
                             offset: 15,
                           }}
@@ -334,7 +335,7 @@ export default function ExperimentalExplorer() {
                           dataKey="y"
                           name={y}
                           domain={["auto", "auto"]}
-                          tick={{ fill: "#9aaeb9", fontSize: 11 }}
+                          tick={{ fill: "var(--muted)", fontSize: 11 }}
                         />
                         <Tooltip
                           cursor={{ strokeDasharray: "3 4" }}
@@ -356,7 +357,7 @@ export default function ExperimentalExplorer() {
                         <Scatter
                           name={name}
                           data={points}
-                          fill="#bfdf9b"
+                          fill="var(--flight)"
                           fillOpacity={0.8}
                           isAnimationActive={false}
                         />

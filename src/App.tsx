@@ -1,3 +1,4 @@
+import type { ImportedDataset } from "./lib/data-import";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -24,7 +25,9 @@ import {
 import ExperimentalExplorer from "./components/ExperimentalExplorer";
 import Lab from "./components/Lab";
 import Overview from "./components/Overview";
+import SafetyDashboard from "./components/SafetyDashboard";
 import Method from "./components/Method";
+import { assistantName, identityQuestion, isIdentityQuestion } from "./lib/kuma";
 import { investigations, sources, historicalCases } from "./data/research";
 import {
   defaultConfig,
@@ -35,6 +38,7 @@ import {
 } from "./lib/simulation";
 
 type Page =
+  | "safety"
   | "overview"
   | "lab"
   | "data"
@@ -46,14 +50,15 @@ type Page =
   | "sources";
 type Investigation = (typeof investigations)[number];
 const nav = [
-  { id: "overview", label: "Inicio", icon: LayoutDashboard, group: "Aprender" },
+  { id: "overview", label: "Inicio", icon: LayoutDashboard, group: "Inicio" },
+  { id: "safety", label: "Panel de seguridad", icon: ShieldCheck, group: "Análisis" },
   { id: "history", label: "Los tres accidentes", icon: BookOpen, group: "Aprender" },
   { id: "lab", label: "Simulador", icon: Orbit, group: "Aprender" },
   { id: "method", label: "Cómo funciona", icon: SlidersHorizontal, group: "Aprender" },
   { id: "research", label: "Investigaciones", icon: FlaskConical, group: "Evidencia" },
   { id: "data", label: "Datos de ensayos", icon: Activity, group: "Evidencia" },
   { id: "compare", label: "Comparador", icon: Layers3, group: "Evidencia" },
-  { id: "assistant", label: "Asistente IA", icon: Sparkles, group: "Ayuda" },
+  { id: "assistant", label: assistantName, icon: Sparkles, group: "Ayuda" },
   { id: "sources", label: "Fuentes y método", icon: Database, group: "Ayuda" },
 ] as const;
 const cx = (...values: (string | false | undefined)[]) =>
@@ -79,6 +84,7 @@ function App() {
     const hash = window.location.hash.slice(1);
     return nav.some((item) => item.id === hash) ? (hash as Page) : "overview";
   });
+  const [importedDataset, setImportedDataset] = useState<ImportedDataset | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todas");
@@ -295,6 +301,16 @@ function App() {
           </div>
         </header>
         <main>
+          {page === "safety" && (
+            <SafetyDashboard
+              importedDataset={importedDataset}
+              config={config}
+              onConfig={setConfig}
+              openLab={() => navigate("lab")}
+              openData={() => navigate("data")}
+              openMethod={() => navigate("method")}
+            />
+          )}
           {page === "overview" && (
             <Overview
               go={navigate}
@@ -467,7 +483,7 @@ function App() {
                   <p>Las tablas originales de la NASA, con un gráfico para comparar dos medidas.</p>
                 </div>
               </div>
-              <ExperimentalExplorer />
+              <ExperimentalExplorer onImport={setImportedDataset} onOpenDashboard={() => navigate("safety")} />
             </>
           )}
           {page === "compare" && (
@@ -676,8 +692,8 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <h1>Asistente IA</h1>
-                  <p>Respuestas cortas basadas en el catálogo, con sus fuentes.</p>
+                  <h1>{assistantName}</h1>
+                  <p>Asistente de Orbital Fire Lab. Respuestas breves con fuentes del catálogo.</p>
                 </div>
                 <span className={cx("tag", aiConfigured ? "lime" : "peach")}>
                   {!aiChecked
@@ -690,6 +706,7 @@ function App() {
               <section className="assistant-panel">
                 <div className="prompt-grid">
                   {[
+                    identityQuestion,
                     "¿Por qué el fuego es distinto sin gravedad?",
                     "¿Apagar los ventiladores ayuda a apagar un incendio en órbita?",
                     "¿Qué aprendimos del incendio de la Mir?",
@@ -699,7 +716,7 @@ function App() {
                       key={text}
                       onClick={() => {
                         setQuestion(text);
-                        if (aiConfigured) void ask(text);
+                        if (aiConfigured || isIdentityQuestion(text)) void ask(text);
                       }}
                     >
                       {text}
@@ -711,7 +728,7 @@ function App() {
                   <div className="setup-note">
                     <CircleHelp size={20} />
                     <div>
-                      <strong>El asistente necesita una clave de Gemini</strong>
+                      <strong>Las consultas científicas de Kuma requieren conexión con Gemini</strong>
                       <p>
                         Guárdala en el servidor como GEMINI_API_KEY. Mientras
                         tanto, puedes usar el resto del laboratorio.
@@ -730,8 +747,8 @@ function App() {
                   }}
                 >
                   <textarea
-                    aria-label="Pregunta científica"
-                    placeholder="Escribe tu pregunta. Por ejemplo: ¿por qué el humo no sube en órbita?"
+                    aria-label="Pregunta para Kuma"
+                    placeholder="Kuma, ¿por qué el humo no sube en órbita?"
                     value={question}
                     maxLength={2000}
                     onChange={(e) => setQuestion(e.target.value)}
@@ -741,7 +758,8 @@ function App() {
                     <button
                       className="button primary"
                       disabled={
-                        asking || question.trim().length < 3 || !aiConfigured
+                        asking || question.trim().length < 3 ||
+                        (!aiConfigured && !isIdentityQuestion(question))
                       }
                     >
                       {asking ? "Consultando…" : "Consultar"}
@@ -757,17 +775,17 @@ function App() {
                 {answer && (
                   <article className="ai-answer">
                     <div className="answer-label">
-                      <Sparkles size={17} /> Respuesta de Gemini
+                      <Sparkles size={17} /> Respuesta de {assistantName}
                     </div>
                     <AnswerText text={answer} />
                     <div className="answer-actions">
-                      <button
+                      {!isIdentityQuestion(question) && <button
                         className="button secondary"
                         disabled={asking}
                         onClick={() => void ask(question, true)}
                       >
                         Más detalle
-                      </button>
+                      </button>}
                       <button
                         className="text-button"
                         onClick={() => {
@@ -811,8 +829,8 @@ function App() {
                 </section>
                 <section className="panel">
                   <Sparkles size={22} />
-                  <h3>Asistente IA</h3>
-                  <p>Gemini solo ve las fichas del catálogo y debe citar sus fuentes. Revisa siempre la referencia original.</p>
+                  <h3>{assistantName}</h3>
+                  <p>Kuma usa Gemini para consultar las fichas del catálogo y citar sus fuentes. Revisa siempre la referencia original.</p>
                 </section>
               </div>
               <section className="panel sources-panel">

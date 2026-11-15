@@ -30,6 +30,15 @@ const status = await handleApi(
   {},
 );
 assert.equal((await status.json()).configured, false);
+const identity = await handleApi(
+  request({ question: "Kuma, ¿cómo te llamas?" }),
+  {},
+  async () => assert.fail("Kuma's introduction should work without calling Gemini"),
+);
+assert.equal(identity.status, 200);
+const identityData = await identity.json();
+assert.match(identityData.answer, /^Soy Kuma/);
+assert.deepEqual(identityData.sources, []);
 assert.equal(
   (await handleApi(request({ question: "¿Qué mide BASS?" }), {})).status,
   503,
@@ -57,7 +66,7 @@ assert.equal(
 const env = { GEMINI_API_KEY: "test-secret-never-exposed" };
 let captured;
 const success = await handleApi(
-  request({ question: "¿Qué investiga BASS sobre materiales?" }),
+  request({ question: "Kuma, ¿qué investiga BASS sobre materiales?" }),
   env,
   async (url, init) => {
     captured = { url, init, body: JSON.parse(init.body) };
@@ -90,6 +99,7 @@ assert.ok(!JSON.stringify(answer).includes(env.GEMINI_API_KEY));
 assert.ok(
   captured.body.systemInstruction.parts[0].text.includes("No inventes"),
 );
+assert.match(captured.body.systemInstruction.parts[0].text, /Te llamas Kuma/);
 // Brief answers by default: a short word budget and a small token cap.
 assert.ok(captured.body.systemInstruction.parts[0].text.includes("Máximo 90 palabras"));
 assert.ok(captured.body.generationConfig.maxOutputTokens <= 500);

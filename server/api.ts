@@ -1,4 +1,5 @@
 import { investigations, sources, historicalCases } from "../src/data/research";
+import { assistantName, identityAnswer, isIdentityQuestion } from "../src/lib/kuma";
 
 export interface Environment {
   GEMINI_API_KEY?: string;
@@ -157,6 +158,9 @@ export async function handleApi(
       400,
     );
   }
+  if (isIdentityQuestion(payload.question)) {
+    return json({ answer: identityAnswer, sources: [], model: null });
+  }
   if (!env.GEMINI_API_KEY?.trim()) {
     return json(
       {
@@ -203,7 +207,7 @@ export async function handleApi(
   const context = JSON.stringify(payload.context ?? {}).slice(0, 6000);
   const detailed = payload.detail === true;
   const wordLimit = detailed ? 180 : 90;
-  const system = `Eres el asistente de Orbital Fire Lab. Hablas con público general, no con especialistas.
+  const system = `Te llamas ${assistantName} y eres el asistente de Orbital Fire Lab. Si te hablan por ese nombre, atiende la consulta. Si te preguntan quién eres o cómo te llamas, preséntate como ${assistantName}. Hablas con público general, no con especialistas.
 Responde en español sencillo, con frases cortas y sin jerga. Si usas un término técnico, explícalo en pocas palabras.
 Formato: empieza con la respuesta directa en una o dos frases. Después, si ayuda, añade como máximo ${detailed ? "cuatro" : "tres"} viñetas que empiecen con "- ". Nada de títulos, introducciones ni despedidas. Máximo ${wordLimit} palabras en total.
 Usa únicamente la evidencia del catálogo suministrado para afirmaciones científicas. No afirmes haber leído los documentos completos ni descargado datos crudos. Las fichas son metadatos y resúmenes curados.
